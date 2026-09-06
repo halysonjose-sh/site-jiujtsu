@@ -1,0 +1,69 @@
+# Tatame · Minha turma
+
+PWA mobile-first em português para uma turma de jiu-jítsu. React, TypeScript, Vite, Tailwind CSS e Supabase. Começamos pelos testes: a primeira execução das regras teve 11 falhas esperadas de funcionalidades ainda não implementadas; depois as regras foram implementadas e validadas.
+
+## Executar
+
+Requer Node.js 24 e npm. Use `npm ci` e `npm run dev`.
+
+Sem variáveis de ambiente, a tela de acesso informa que a turma está em preparação. **Conhecer a demonstração** abre dados fictícios em memória, permite alternar entre aluno e professor e não salva registros. Recarregar a página reinicia a demonstração. A demonstração nunca se conecta ao banco real.
+
+## Conectar o Supabase
+
+1. Crie um projeto Supabase dedicado e aplique `supabase/migrations/202609050001_tatame.sql` no SQL Editor (ou use o CLI de migrations).
+2. Copie `.env.example` para `.env.local`. Preencha `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` com a URL e a chave **pública** publishable/anon. Nunca use `service_role` em variáveis `VITE_*`.
+3. Em Authentication, habilite e-mail/senha, confirmação por e-mail e senha mínima de 8 caracteres. Configure Site URL e a lista de redirecionamentos para a origem HTTPS publicada e, no desenvolvimento, `http://localhost:5173` e `http://127.0.0.1:5173`. Configure um provedor SMTP para uso real; o envio padrão do ambiente não substitui essa configuração.
+4. Execute o primeiro bloco de `supabase/bootstrap.sql.example` para gerar um código de entrada. Cadastre sua conta pelo aplicativo e confirme o e-mail. Execute o segundo bloco, com seu e-mail, para torná-la a única conta de professor. Entre novamente.
+5. Compartilhe o código com seus alunos. Você pode trocá-lo em Configurações. A mudança vale para novos cadastros; alunos existentes continuam com acesso.
+6. Execute `npm run build` novamente e publique `dist` por HTTPS. As variáveis Vite são incorporadas durante a compilação; alterá-las depois exige uma nova compilação.
+
+Nenhum projeto Supabase foi criado automaticamente: o usuário optou por deixar essa conexão preparada. A versão entregue permite revisar o aplicativo pela demonstração; uso com alunos reais depende das etapas acima.
+
+## Regras e proteção dos dados
+
+- Uma turma e um professor; público só cadastra alunos, independentemente do papel enviado no formulário. O código é verificado pelo trigger do Auth, antes de concluir a transação, e removido dos metadados. O banco guarda somente hash com salt. O hash não é exposto ao navegador.
+- Presença do aluno não recebe data nem ID do cliente: usa `auth.uid()` e a data do servidor em `America/Sao_Paulo`. A chave aluno/data impede duplicatas. Professor pode acrescentar ou remover datas passadas e de hoje.
+- Faixas branca → azul → roxa → marrom → preta. Até quatro graus nas faixas anteriores à preta; não acompanha graus da preta. Meta inteira positiva opcional, apenas informativa.
+- Graduação sempre usa o dia atual. A presença desse dia pertence ao ciclo encerrado, mesmo que seja corrigida depois. Próximo ciclo começa no dia seguinte; total histórico nunca reinicia.
+- Situação inicial é registrada uma vez, antes de qualquer graduação, inclusive graduação posteriormente desfeita. Não adiciona aulas nem reinicia contagem. Se não definida, o aluno começa na branca sem graus.
+- Só a última graduação válida pode ser desfeita. Cancelamento preserva histórico, autor e data; presenças permanecem intactas.
+- Mutações são funções PostgreSQL transacionais. Graduações usam trava por aluno, revisão otimista e identificador de operação para reenvios. A mesma requisição não soma outro grau; telas desatualizadas recebem erro para atualizar.
+- RLS limita leitura a dados próprios ou professor; não há escrita direta para os clientes. Funções internas não têm permissão pública. O papel vem de `profiles`, não de metadados editáveis do Auth.
+- Dados pessoais ficam somente na memória da interface. O Supabase persiste a sessão de autenticação; o service worker só guarda arquivos estáticos da aplicação. Não há fila offline nem cache das APIs. Sem conexão, a interface esconde os dados e bloqueia ações.
+
+Referências: [RLS do Supabase](https://supabase.com/docs/guides/database/postgres/row-level-security), [service worker do Vite PWA](https://vite-pwa-org.netlify.app/guide/inject-manifest).
+
+## Testes
+
+| Comando                 | Valida                                                                              |
+| ----------------------- | ----------------------------------------------------------------------------------- |
+| `npm test`              | Regras unitárias e componentes React                                                |
+| `npm run test:coverage` | Cobertura de regras, com mínimo de 90% de branches                                  |
+| `npm run test:db`       | Migration, funções e RLS em PostgreSQL via PGlite, sem Docker                       |
+| `npm run test:e2e`      | Fluxos da demonstração, offline e acessibilidade básica em Chromium 360 px e WebKit |
+| `npm run test:supabase` | Auth, PostgREST e concorrência por HTTP no Supabase local descartável               |
+| `npm run build`         | TypeScript, produção, manifesto e service worker                                    |
+| `npm run format:check`  | Formatação do código                                                                |
+
+Os testes PGlite executam a migration real e simulam apenas o schema de autenticação e os papéis fornecidos pelo Supabase. Eles validam regras e RLS, mas não substituem Auth/PostgREST nem concorrência entre conexões PostgreSQL reais. Os testes HTTP adicionais existem para essa camada e **recusam URL remota**.
+
+Para a integração completa: inicie o Docker Desktop em modo Linux, execute `npx supabase start`, `npx supabase db reset` **somente em uma instância local descartável**, e `npm run test:supabase`. O reset apaga dados locais. Os testes HTTP criam contas temporárias e restauram as configurações ao terminar. Não use uma instância local contendo dados que deseja preservar.
+
+## PWA e publicação
+
+`npm run build` gera `dist/manifest.webmanifest`, ícones e `dist/sw.js`. `npm run preview -- --port 4173` permite testar o build; em outra janela, `node scripts/pwa-check.mjs` verifica instalação no Chromium, cache estático e abertura offline com aviso. O modo de desenvolvimento não instala o service worker.
+
+Android: menu do navegador → Instalar aplicativo. iPhone: Safari → Compartilhar → Adicionar à Tela de Início. A disponibilidade da opção depende do navegador; a interface também mostra as instruções. Testes WebKit em desktop não equivalem a validar a instalação em um iPhone físico.
+
+A hospedagem Sites fica vinculada em `.openai/hosting.json`. A prévia publicada é privada para revisão do proprietário. Antes de liberar aos alunos, conecte Supabase/SMTP, configure os redirecionamentos, recompile e ajuste o acesso da hospedagem para o público pretendido. Valide instalação em Android/iPhone físicos e o percurso cadastro → confirmação → presença → professor → grau em um projeto Supabase de teste.
+
+## Estrutura
+
+- `src/domain`: regras puras e testes.
+- `src/lib`: adaptador Supabase e demonstração em memória.
+- `src/App.tsx`, `src/components`: telas e ações com confirmação, estado de envio e erros.
+- `supabase/migrations`: esquema, permissões e operações do servidor.
+- `supabase/tests` e `supabase/integration`: testes PostgreSQL e integração HTTP.
+- `e2e`: percursos no navegador; `scripts`: validação de PWA, capturas e ícones.
+
+Fora desta versão: pagamentos, agenda, notificações, importação de aulas anteriores, crianças, graus de faixa preta e sincronização offline.

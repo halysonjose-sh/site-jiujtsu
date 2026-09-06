@@ -1,0 +1,19 @@
+-- Execute depois da migration, no SQL Editor do SEU projeto Supabase.
+-- 1. Gere um código de entrada. Copie o valor exibido em Messages/Notices.
+do $$
+declare new_code text := upper(replace(gen_random_uuid()::text, '-', ''));
+begin
+ update public.class_settings
+ set code_hash=encode(sha256(convert_to(code_salt || new_code, 'UTF8')), 'hex');
+ raise notice 'Código da turma: %', new_code;
+end $$;
+
+-- 2. Cadastre sua conta pelo aplicativo usando esse código e confirme o e-mail.
+-- 3. Substitua o e-mail abaixo e execute APENAS este bloco para virar professor.
+do $$
+declare teacher_email text := 'SUBSTITUA-PELO-SEU-EMAIL'; teacher_id uuid;
+begin
+ select id into teacher_id from auth.users where lower(email)=lower(teacher_email);
+ if teacher_id is null then raise exception 'Conta não encontrada. Cadastre e confirme seu e-mail primeiro.'; end if;
+ update public.profiles set role='professor' where id=teacher_id;
+end $$;
