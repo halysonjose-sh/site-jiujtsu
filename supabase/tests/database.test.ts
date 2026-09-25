@@ -469,17 +469,22 @@ describe('diário de treinos', () => {
     )
     expect((await one(a, 'select public.session_journal($1)', [s])).photos).toEqual([])
   })
-  it('sem fotos em aula futura e no máximo 20 por aula', async () => {
+  it('foto em aula futura é permitida; cancelada não; no máximo 20 por aula', async () => {
     const team = (
       await db.query<{ id: string }>("select id from public.teams where slug='minha-turma'")
     ).rows[0].id
     const future = await sessionAt('2 hours')
+    await asUser(teacher, 'select public.add_session_photo($1,$2,null)', [
+      future,
+      `${team}/${future}/a.jpg`,
+    ])
+    const cancelled = await sessionAt('3 hours', 'cancelada')
     await expect(
       asUser(teacher, 'select public.add_session_photo($1,$2,null)', [
-        future,
-        `${team}/${future}/a.jpg`,
+        cancelled,
+        `${team}/${cancelled}/a.jpg`,
       ]),
-    ).rejects.toThrow(/início/)
+    ).rejects.toThrow(/cancelada/)
     const s = await sessionAt('-1 hour', 'realizada')
     for (let i = 0; i < 20; i++)
       await asUser(teacher, 'select public.add_session_photo($1,$2,null)', [
@@ -489,5 +494,111 @@ describe('diário de treinos', () => {
     await expect(
       asUser(teacher, 'select public.add_session_photo($1,$2,null)', [s, `${team}/${s}/f21.jpg`]),
     ).rejects.toThrow(/20/)
+    const listed = (
+      await one(a, 'select public.list_sessions(public.today_sp()-1,public.today_sp()+1)')
+    ).find((x: any) => x.id === s)
+    expect(listed.cover).toBe(`${team}/${s}/f0.jpg`)
+  })
+})
+
+describe('registro do treino, logo e notificações', () => {
+  it('professor marca vários presentes de uma vez, inclusive quem não fez check-in', async () => {
+    const s = await sessionAt('3 hours')
+    await asUser(a, 'select public.checkin($1)', [s])
+    await db.query(
+      "update public.class_sessions set starts_at=now()-interval '5 minutes' where id=$1",
+      [s],
+    )
+    const before = [
+      (await one(a, 'select public.student_detail($1)', [a])).total,
+      (await one(b, 'select public.student_detail($1)', [b])).total,
+    ]
+    expect(await one(teacher, 'select public.confirm_presences($1,$2)', [s, [a, b, b]])).toBe(2)
+    expect((await one(a, 'select public.student_detail($1)', [a])).total).toBe(before[0] + 1)
+    expect((await one(b, 'select public.student_detail($1)', [b])).total).toBe(before[1] + 1)
+    expect(
+      (await db.query('select status from public.class_sessions where id=$1', [s])).rows[0].status,
+    ).toBe('realizada')
+    await expect(asUser(a, 'select public.confirm_presences($1,$2)', [s, [a]])).rejects.toThrow()
+    await expect(
+      asUser(teacher, 'select public.confirm_presences($1,$2)', [s, [outroAluno]]),
+    ).rejects.toThrow()
+    await expect(
+      asUser(teacher, 'select public.confirm_presences($1,$2)', [await sessionAt('2 hours'), [a]]),
+    ).rejects.toThrow()
+    await expect(asUser(teacher, "select public.confirm_presences($1,'{}')", [s])).rejects.toThrow()
+  })
+  it('só o dono troca a logo, sempre dentro da pasta da equipe', async () => {
+    const team = (
+      await db.query<{ id: string }>("select id from public.teams where slug='minha-turma'")
+    ).rows[0].id
+    await asUser(teacher, 'select public.set_team_logo($1)', [`${team}/logo-abc.png`])
+    expect((await one(a, 'select public.get_settings()')).team.logoPath).toBe(
+      `${team}/logo-abc.png`,
+    )
+    expect(await one(teacher, 'select public.set_team_logo(null)')).toBe(`${team}/logo-abc.png`)
+    await expect(
+      asUser(teacher, 'select public.set_team_logo($1)', ['outra/logo-x.png']),
+    ).rejects.toThrow()
+    await expect(
+      asUser(a, 'select public.set_team_logo($1)', [`${team}/logo-x.png`]),
+    ).rejects.toThrow()
+  })
+  it('só professores registram notificações; aluno não lê inscrições', async () => {
+    await asUser(teacher, "select public.save_push_subscription('https://push.example/1','k','a')")
+    await asUser(
+      teacher,
+      "select public.save_push_subscription('https://push.example/1','k2','a2')",
+    )
+    expect(
+      Number((await db.query('select count(*) from public.push_subscriptions')).rows[0].count),
+    ).toBe(1)
+    await expect(
+      asUser(a, "select public.save_push_subscription('https://push.example/2','k','a')"),
+    ).rejects.toThrow()
+    await expect(
+      asUser(teacher, "select public.save_push_subscription('http://inseguro','k','a')"),
+    ).rejects.toThrow()
+    await expect(asUser(a, 'select * from public.push_subscriptions')).rejects.toThrow()
+    await asUser(teacher, "select public.delete_push_subscription('https://push.example/1')")
+    expect(
+      Number((await db.query('select count(*) from public.push_subscriptions')).rows[0].count),
+    ).toBe(0)
+  })
+})
+
+describe('código de acesso visível para professores', () => {
+  it('dono gera código legível; aluno se cadastra com ele (mesmo em minúsculas)', async () => {
+    const code = await one(teacher, 'select public.generate_join_code()')
+    expect(code).toMatch(/^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/)
+    expect(await one(teacher, 'select public.get_join_code()')).toBe(code)
+    await signup(id(20), '  ' + code.toLowerCase() + ' ')
+    expect(
+      (await db.query('select status from public.team_members where user_id=$1', [id(20)])).rows,
+    ).toEqual([{ status: 'pendente' }])
+    const other = await one(teacher, 'select public.generate_join_code()')
+    expect(other).not.toBe(code)
+    await expect(signup(id(21), code)).rejects.toThrow(/Código/)
+  })
+  it('professor vê e compartilha, mas não gera; aluno não vê', async () => {
+    await asUser(teacher, "select public.set_member_role($1,'professor')", [b])
+    expect(await one(b, 'select public.get_join_code()')).toMatch(/^.{4}-.{4}$/)
+    await expect(asUser(b, 'select public.generate_join_code()')).rejects.toThrow(/dono/)
+    await asUser(teacher, "select public.set_member_role($1,'aluno')", [b])
+    await expect(asUser(a, 'select public.get_join_code()')).rejects.toThrow()
+    await expect(asUser(a, 'select join_code from public.teams')).rejects.toThrow()
+  })
+  it('código definido manualmente também fica visível; cada equipe vê só o seu', async () => {
+    await asUser(teacher, "select public.update_settings(30,'MEU-CODIGO-2026')")
+    expect(await one(teacher, 'select public.get_join_code()')).toBe('MEU-CODIGO-2026')
+    expect(await one(outroProf, 'select public.get_join_code()')).not.toBe('MEU-CODIGO-2026')
+    await asUser(teacher, "select public.set_join_code('OUTRO-CODIGO-99')")
+    expect(await one(teacher, 'select public.get_join_code()')).toBe('OUTRO-CODIGO-99')
+    expect((await one(a, 'select public.get_settings()')).goal).toBe(30)
+    await expect(asUser(teacher, "select public.set_join_code('curto')")).rejects.toThrow()
+    await expect(asUser(teacher, "select public.set_join_code('OUTRA-EQUIPE')")).rejects.toThrow(
+      /outro/,
+    )
+    await expect(asUser(a, "select public.set_join_code('ALUNO-TENTA-1')")).rejects.toThrow()
   })
 })

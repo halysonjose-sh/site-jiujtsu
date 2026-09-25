@@ -72,6 +72,7 @@ export function createDemo() {
     logoPath: null,
   }
   let goal: number | null = 30
+  let joinCode: string | null = 'TIGR-2026'
   let schedules: Schedule[] = [
     {
       id: 'sch-1',
@@ -266,6 +267,7 @@ export function createDemo() {
             description: s.description ?? null,
             scheduleId: s.scheduleId,
             photos: photos.filter((p) => p.sessionId === s.id).length,
+            cover: photos.find((p) => p.sessionId === s.id)?.path ?? null,
             checkins: list.filter((p) => p.status !== 'rejeitada').length,
             pending: staff ? list.filter((p) => p.status === 'pendente').length : null,
             confirmed: staff ? list.filter((p) => p.status === 'confirmada').length : null,
@@ -323,8 +325,7 @@ export function createDemo() {
     },
     add_session_photo: (a) => {
       const s = session(a.p_session)
-      if (new Date(s.startsAt).getTime() > Date.now())
-        throw new Error('Fotos só podem ser adicionadas depois do início da aula.')
+      if (s.status === 'cancelada') throw new Error('Aula cancelada.')
       const id = newId('foto')
       photos = [...photos, { id, sessionId: s.id!, path: a.p_path, caption: a.p_caption ?? null }]
       return id
@@ -457,6 +458,30 @@ export function createDemo() {
         : students.filter((s) => s.id !== a.p_user)
     },
     update_settings: (a) => void (goal = a.p_goal),
+    confirm_presences: (a) => {
+      const s = session(a.p_session)
+      for (const id of new Set<string>(a.p_students))
+        presences = teacherAddPresence(presences, s, prof, id, new Date())
+      sessions = sessions.map((x) =>
+        x.id === s.id && x.status === 'prevista' ? { ...x, status: 'realizada' } : x,
+      )
+      return new Set(a.p_students).size
+    },
+    get_join_code: () => joinCode,
+    generate_join_code: () => {
+      const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+      const pick = () => abc[Math.floor(Math.random() * abc.length)]
+      joinCode = Array.from({ length: 8 }, pick)
+        .join('')
+        .replace(/^(.{4})/, '$1-')
+      return joinCode
+    },
+    set_join_code: (a) => void (joinCode = String(a.p_code).trim()),
+    set_team_logo: (a) => {
+      const old = team.logoPath
+      team = { ...team, logoPath: a.p_path ?? null }
+      return old
+    },
     update_team: (a) =>
       void (team = { ...team, name: a.p_name, primaryColor: a.p_primary, accentColor: a.p_accent }),
     set_initial: (a) => {

@@ -4,6 +4,10 @@ import {
   ArrowLeft,
   ArrowRight,
   Award,
+  Copy,
+  Link2,
+  RefreshCw,
+  Share2,
   CalendarClock,
   CalendarDays,
   Check,
@@ -27,6 +31,9 @@ import {
   friendlyError,
   isStaff,
   loadDashboard,
+  logoUrl,
+  removeLogo,
+  uploadLogo,
   supabasePhotos,
   rpc,
   supabase,
@@ -37,6 +44,14 @@ import {
 } from './lib/api'
 import { Agenda, UpcomingClasses, dayLabel, presenceLabel, timeLabel } from './components/Classes'
 import { zonedToUtc } from './domain/schedule'
+import { compressImage } from './lib/image'
+import {
+  currentSubscription,
+  disablePush,
+  enablePush,
+  notifyCheckin,
+  pushSupported,
+} from './lib/push'
 import { createDemo } from './lib/demo'
 import { useConnection } from './lib/useConnection'
 
@@ -44,13 +59,47 @@ const dateLabel = (day: string) =>
   new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', timeZone: 'UTC' }).format(
     new Date(day + 'T12:00:00Z'),
   )
-function Brand() {
+/** Marca Tatame: faixa amarrada com ponteira preta e dois graus. Usa a cor da equipe. */
+function BeltMark() {
+  return (
+    <svg className="brand-mark" viewBox="0 0 64 64" aria-hidden="true">
+      <rect x="3" y="20" width="58" height="11" rx="3" fill="currentColor" />
+      <path d="M27 31 L35 32 L25.5 58 L17.5 55 Z" fill="currentColor" />
+      <path d="M30 32 L38 31 L47.5 55 L39.5 58 Z" fill="currentColor" />
+      <path d="M43.2 44.2 L47.5 55 L39.5 58 L35.4 47.3 Z" fill="#161616" />
+      <path d="M37.1 50.4 L44.1 47.6 M38.1 53.1 L45.1 50.3" stroke="#fff" strokeWidth="1.5" />
+      <rect
+        x="23"
+        y="15"
+        width="18"
+        height="21"
+        rx="5"
+        fill="currentColor"
+        stroke="var(--cream)"
+        strokeWidth="2"
+      />
+      <path
+        d="M27 18.5 L37 32.5"
+        stroke="var(--cream)"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        opacity=".45"
+      />
+    </svg>
+  )
+}
+function Brand({ team }: { team?: Team | null }) {
+  const logo = logoUrl(team?.logoPath)
+  if (logo)
+    return (
+      <div className="brand">
+        <img className="brand-logo" src={logo} alt={'Logo ' + (team?.name ?? 'da equipe')} />
+        <span className="brand-team">{team?.name}</span>
+      </div>
+    )
   return (
     <div className="brand">
-      <span className="brand-mark" aria-hidden="true">
-        <i />
-        <i />
-      </span>
+      <BeltMark />
       <span>
         tatame<span className="brand-dot">.</span>
       </span>
@@ -132,7 +181,8 @@ function Auth({
   recovery: boolean
   onRecovered: () => void
 }) {
-  const [mode, setMode] = useState<'login' | 'signup' | 'forgot'>('login'),
+  const inviteCode = new URLSearchParams(location.search).get('codigo') ?? ''
+  const [mode, setMode] = useState<'login' | 'signup' | 'forgot'>(inviteCode ? 'signup' : 'login'),
     [pending, setPending] = useState(false),
     [error, setError] = useState(''),
     [message, setMessage] = useState('')
@@ -273,7 +323,14 @@ function Auth({
             )}
             {!recovery && mode === 'signup' && (
               <Field label="Código da turma">
-                <input name="code" minLength={8} maxLength={128} autoComplete="off" required />
+                <input
+                  name="code"
+                  minLength={8}
+                  maxLength={128}
+                  autoComplete="off"
+                  defaultValue={inviteCode}
+                  required
+                />
               </Field>
             )}
             {mode === 'login' && !recovery && (
@@ -348,12 +405,14 @@ function StudentSummary({
   teacher,
   call,
   onChanged,
+  onCheckin,
 }: {
   student: StudentView
   goal: number | null
   teacher: boolean
   call: Call
   onChanged: () => Promise<void>
+  onCheckin?: (session: string) => void
 }) {
   const p = progress(s.cycle, goal)
   return (
@@ -391,7 +450,9 @@ function StudentSummary({
           <span className="muted">Desde a última graduação</span>
         </section>
       </div>
-      {!teacher && <UpcomingClasses call={call} today={s.today} onChanged={onChanged} />}
+      {!teacher && (
+        <UpcomingClasses call={call} today={s.today} onChanged={onChanged} onCheckin={onCheckin} />
+      )}
       {p && (
         <section className="goal-card">
           <div className="section-heading">
@@ -689,100 +750,290 @@ function TeacherActions({ s, mutate }: { s: StudentView; mutate: Mutate }) {
     </section>
   )
 }
+function JoinCode({ call, owner, teamName }: { call: Call; owner: boolean; teamName: string }) {
+  const [code, setCode] = useState<string | null | undefined>(undefined),
+    [custom, setCustom] = useState(''),
+    [copied, setCopied] = useState(''),
+    [error, setError] = useState('')
+  useEffect(() => {
+    call<string | null>('get_join_code')
+      .then(setCode)
+      .catch((e) => setError(friendlyError(e)))
+  }, [call])
+  const link = code ? `${location.origin}/?codigo=${encodeURIComponent(code)}` : ''
+  const message = code
+    ? `Olá! Para entrar na turma ${teamName} no app Tatame, abra ${link} e cadastre-se. Código da turma: ${code}`
+    : ''
+  async function copy(text: string, what: string) {
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      const area = document.createElement('textarea')
+      area.value = text
+      document.body.appendChild(area)
+      area.select()
+      document.execCommand('copy')
+      area.remove()
+    }
+    setCopied(what)
+    setTimeout(() => setCopied(''), 2500)
+  }
+  async function share() {
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'Código da turma', text: message })
+        return
+      } catch (e) {
+        if ((e as DOMException).name === 'AbortError') return
+      }
+    }
+    window.open('https://wa.me/?text=' + encodeURIComponent(message), '_blank', 'noopener')
+  }
+  return (
+    <section className="settings-card join-code">
+      <h2>Código de acesso.</h2>
+      <p className="muted">
+        Envie para seus alunos. Quem se cadastrar com ele entra como pendente até você aprovar em
+        Alunos.
+      </p>
+      {error && <p className="error-message">{error}</p>}
+      {code === undefined && !error && <p className="muted">Carregando…</p>}
+      {code === null && (
+        <p className="notice">
+          O código atual foi criado antes desta versão e não pode ser exibido.{' '}
+          {owner ? 'Gere um novo código abaixo.' : 'Peça ao dono da equipe para gerar um novo.'}
+        </p>
+      )}
+      {code && (
+        <>
+          <p className="join-code-value" aria-label="Código da turma">
+            {code}
+          </p>
+          <div className="graduation-buttons">
+            <button className="primary" onClick={() => void share()}>
+              <Share2 size={17} /> Compartilhar
+            </button>
+            <button className="secondary" onClick={() => void copy(code, 'code')}>
+              <Copy size={17} /> {copied === 'code' ? 'Copiado!' : 'Copiar código'}
+            </button>
+            <button className="secondary" onClick={() => void copy(link, 'link')}>
+              <Link2 size={17} /> {copied === 'link' ? 'Copiado!' : 'Copiar link de cadastro'}
+            </button>
+          </div>
+          <p className="field-help">O link abre o cadastro com o código já preenchido.</p>
+        </>
+      )}
+      {owner && (
+        <details className="join-code-owner">
+          <summary>Trocar código</summary>
+          <p className="field-help">
+            Quem já está cadastrado continua com acesso. O código antigo deixa de funcionar para
+            novos cadastros.
+          </p>
+          <ActionButton
+            className="secondary"
+            confirm="Gerar um novo código? O código atual deixará de funcionar para novos cadastros."
+            success="Novo código gerado."
+            action={async () => setCode(await call<string>('generate_join_code'))}
+          >
+            <RefreshCw size={16} /> Gerar novo código
+          </ActionButton>
+          <Field label="Ou defina um código próprio">
+            <input
+              value={custom}
+              minLength={8}
+              maxLength={128}
+              autoComplete="off"
+              placeholder="Mínimo de 8 caracteres"
+              onChange={(e) => setCustom(e.target.value)}
+            />
+          </Field>
+          <ActionButton
+            className="text-button"
+            disabled={custom.trim().length < 8}
+            success="Código atualizado."
+            action={async () => {
+              await call('set_join_code', { p_code: custom.trim() })
+              setCode(custom.trim())
+              setCustom('')
+            }}
+          >
+            Usar este código
+          </ActionButton>
+        </details>
+      )}
+    </section>
+  )
+}
+function Notifications({ demo }: { demo: boolean }) {
+  const [on, setOn] = useState<boolean | null>(null)
+  useEffect(() => {
+    if (demo) return setOn(false)
+    currentSubscription()
+      .then((s) => setOn(!!s))
+      .catch(() => setOn(false))
+  }, [demo])
+  return (
+    <div className="team-form">
+      <h2>Notificações.</h2>
+      <p className="muted">
+        Receba um aviso neste aparelho quando um aluno fizer check-in. No iPhone, instale o app na
+        tela inicial antes de ativar.
+      </p>
+      {!pushSupported() && <p className="field-help">Este navegador não oferece notificações.</p>}
+      <ActionButton
+        className={on ? 'secondary' : 'primary'}
+        disabled={demo || on === null || !pushSupported()}
+        success={on ? 'Notificações ativadas neste aparelho.' : 'Notificações desativadas.'}
+        action={async () => {
+          if (on) await disablePush()
+          else await enablePush()
+          setOn(!on)
+        }}
+      >
+        {demo
+          ? 'Indisponível na demonstração'
+          : on
+            ? 'Desativar notificações'
+            : 'Ativar notificações'}
+      </ActionButton>
+    </div>
+  )
+}
 function Settings({
   goal,
   mutate,
   team,
   owner,
+  call,
+  demo,
 }: {
   goal: number | null
   mutate: Mutate
   team: Team | null
   owner: boolean
+  call: Call
+  demo: boolean
 }) {
   const [value, setValue] = useState(goal?.toString() ?? ''),
-    [code, setCode] = useState(''),
     [name, setName] = useState(team?.name ?? ''),
     [primary, setPrimary] = useState(team?.primaryColor ?? '#234c3a'),
-    [accent, setAccent] = useState(team?.accentColor ?? '#cee68b')
+    [accent, setAccent] = useState(team?.accentColor ?? '#cee68b'),
+    [logoError, setLogoError] = useState('')
   const valid =
     value === '' ||
     (Number.isInteger(Number(value)) && Number(value) > 0 && Number(value) <= 2147483647)
   return (
-    <section className="settings-card">
-      <h2>Do jeito da sua turma.</h2>
-      <p className="muted">Uma referência para acompanhar a constância dos alunos.</p>
-      <Field label="Meta de aulas por ciclo">
-        <input
-          type="number"
-          min={1}
-          step={1}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          placeholder="Sem meta"
-        />
-      </Field>
-      <p className="field-help">Deixe vazio para não usar meta. Ela nunca impede uma graduação.</p>
-      {owner && (
-        <>
-          <Field label="Novo código da turma">
-            <input
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              minLength={8}
-              maxLength={128}
-              autoComplete="off"
-              placeholder="Deixe vazio para manter o atual"
-            />
-          </Field>
-          <p className="field-help">
-            De 8 a 128 caracteres. Compartilhe somente com seus alunos. Alterar o código não afeta
-            quem já está cadastrado. Novos cadastros precisam da sua aprovação.
-          </p>
-        </>
-      )}
-      <ActionButton
-        className="primary"
-        disabled={!valid || (code !== '' && code.trim().length < 8)}
-        success="Configurações salvas."
-        action={async () => {
-          await mutate('update_settings', {
-            p_goal: value === '' ? null : Number(value),
-            p_code: code.trim() || null,
-          })
-          setCode('')
-        }}
-      >
-        Salvar configurações
-      </ActionButton>
-      {owner && (
-        <div className="team-form">
-          <h2>Visual da equipe.</h2>
-          <p className="muted">Nome e cores aparecem para todos os alunos da equipe.</p>
-          <Field label="Nome da equipe">
-            <input value={name} maxLength={80} onChange={(e) => setName(e.target.value)} />
-          </Field>
-          <div className="form-grid">
-            <Field label="Cor principal">
-              <input type="color" value={primary} onChange={(e) => setPrimary(e.target.value)} />
+    <>
+      <JoinCode call={call} owner={owner} teamName={team?.name ?? 'da equipe'} />
+      <section className="settings-card">
+        <h2>Do jeito da sua turma.</h2>
+        <p className="muted">Uma referência para acompanhar a constância dos alunos.</p>
+        <Field label="Meta de aulas por ciclo">
+          <input
+            type="number"
+            min={1}
+            step={1}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder="Sem meta"
+          />
+        </Field>
+        <p className="field-help">
+          Deixe vazio para não usar meta. Ela nunca impede uma graduação.
+        </p>
+        <ActionButton
+          className="primary"
+          disabled={!valid}
+          success="Configurações salvas."
+          action={async () => {
+            await mutate('update_settings', {
+              p_goal: value === '' ? null : Number(value),
+              p_code: null,
+            })
+          }}
+        >
+          Salvar configurações
+        </ActionButton>
+        {owner && (
+          <div className="team-form">
+            <h2>Visual da equipe.</h2>
+            <p className="muted">Nome e cores aparecem para todos os alunos da equipe.</p>
+            <Field label="Nome da equipe">
+              <input value={name} maxLength={80} onChange={(e) => setName(e.target.value)} />
             </Field>
-            <Field label="Cor de destaque">
-              <input type="color" value={accent} onChange={(e) => setAccent(e.target.value)} />
-            </Field>
+            <div className="form-grid">
+              <Field label="Cor principal">
+                <input type="color" value={primary} onChange={(e) => setPrimary(e.target.value)} />
+              </Field>
+              <Field label="Cor de destaque">
+                <input type="color" value={accent} onChange={(e) => setAccent(e.target.value)} />
+              </Field>
+            </div>
+            <ActionButton
+              className="secondary"
+              disabled={name.trim().length < 2}
+              success="Visual atualizado."
+              action={() =>
+                mutate('update_team', { p_name: name, p_primary: primary, p_accent: accent })
+              }
+            >
+              Salvar visual
+            </ActionButton>
+            <div className="logo-row">
+              {logoUrl(team?.logoPath) ? (
+                <img className="logo-preview" src={logoUrl(team?.logoPath)!} alt="Logo atual" />
+              ) : (
+                <span className="muted">Sem logo. O app mostra a marca Tatame.</span>
+              )}
+            </div>
+            <label className="secondary upload-button">
+              {team?.logoPath ? 'Trocar logo' : 'Enviar logo'}
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                aria-label="Enviar logo da equipe"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0]
+                  e.target.value = ''
+                  if (!file || !team) return
+                  try {
+                    const blob = await compressImage(file, 512, 0.9, 'image/webp')
+                    const path = demo ? URL.createObjectURL(blob) : await uploadLogo(team.id, blob)
+                    const old = await call<string | null>('set_team_logo', { p_path: path })
+                    if (old) await removeLogo(old).catch(() => {})
+                    await mutate('today_sp')
+                    setLogoError('')
+                  } catch (err) {
+                    setLogoError(friendlyError(err))
+                  }
+                }}
+              />
+            </label>
+            {team?.logoPath && (
+              <ActionButton
+                className="text-button danger"
+                confirm="Remover a logo da equipe?"
+                action={async () => {
+                  const old = await call<string | null>('set_team_logo', { p_path: null })
+                  if (old) await removeLogo(old).catch(() => {})
+                  await mutate('today_sp')
+                }}
+              >
+                Remover logo
+              </ActionButton>
+            )}
+            {logoError && (
+              <p className="error-message" role="alert">
+                {logoError}
+              </p>
+            )}
+            <p className="field-help">PNG, JPG ou WEBP. A imagem é reduzida para até 512 px.</p>
           </div>
-          <ActionButton
-            className="secondary"
-            disabled={name.trim().length < 2}
-            success="Visual atualizado."
-            action={() =>
-              mutate('update_team', { p_name: name, p_primary: primary, p_accent: accent })
-            }
-          >
-            Salvar visual
-          </ActionButton>
-        </div>
-      )}
-    </section>
+        )}
+        <Notifications demo={demo} />
+      </section>
+    </>
   )
 }
 export default function App() {
@@ -896,7 +1147,7 @@ export default function App() {
   if (!online)
     return (
       <div className="offline-screen">
-        <Brand />
+        <Brand team={data?.team} />
         <WifiOff size={44} />
         <h1>Você está sem conexão</h1>
         <p>Conecte-se à internet para acessar sua turma e registrar os treinos.</p>
@@ -946,7 +1197,7 @@ export default function App() {
   if (data.status !== 'ativo')
     return (
       <div className="loading-screen">
-        <Brand />
+        <Brand team={data?.team} />
         <h1>{data.status === 'pendente' ? 'Cadastro recebido!' : 'Acesso bloqueado'}</h1>
         <p role="status">
           {data.status === 'pendente'
@@ -1004,7 +1255,7 @@ export default function App() {
         </div>
       )}
       <aside className="sidebar">
-        <Brand />
+        <Brand team={data?.team} />
         <span className="sidebar-label">{(data.team?.name ?? 'Minha turma').toUpperCase()}</span>
         <nav aria-label="Navegação principal">
           {pages.map((p) => (
@@ -1036,7 +1287,7 @@ export default function App() {
       <div className="main-area">
         <header className="topbar">
           <div className="mobile-brand">
-            <Brand />
+            <Brand team={data?.team} />
           </div>
           <span className="desktop-breadcrumb">
             {data.team?.name ?? 'Minha turma'} <ChevronRight size={14} />{' '}
@@ -1108,13 +1359,22 @@ export default function App() {
             )}
           </div>
           {page === 'settings' && teacher ? (
-            <Settings goal={data.goal} mutate={mutate} team={data.team} owner={owner} />
+            <Settings
+              goal={data.goal}
+              mutate={mutate}
+              team={data.team}
+              owner={owner}
+              call={call}
+              demo={!!demo}
+            />
           ) : page === 'agenda' ? (
             <Agenda
               call={call}
               today={data.today}
               staff={teacher}
               photos={demo ? demo.photos : supabasePhotos}
+              teamId={data.team?.id ?? ''}
+              roster={active.map((x) => ({ id: x.id, name: x.name }))}
               onChanged={refresh}
             />
           ) : teacher && !student ? (
@@ -1228,6 +1488,7 @@ export default function App() {
                     teacher={teacher}
                     call={call}
                     onChanged={refresh}
+                    onCheckin={demo ? undefined : notifyCheckin}
                   />
                 )}
                 <History

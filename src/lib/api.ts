@@ -54,6 +54,7 @@ export type SessionView = {
   description: string | null
   scheduleId: string | null
   photos: number
+  cover: string | null
   checkins: number
   pending: number | null
   confirmed: number | null
@@ -90,6 +91,27 @@ export type PhotoStore = {
   remove(path: string): Promise<void>
 }
 export const PHOTO_BUCKET = 'session-photos'
+export const LOGO_BUCKET = 'team-branding'
+/** Endereço público da logo (na demonstração o caminho já é um blob:). */
+export function logoUrl(path: string | null | undefined): string | null {
+  if (!path) return null
+  if (/^(blob:|data:)/.test(path)) return path
+  return url ? `${url}/storage/v1/object/public/${LOGO_BUCKET}/${path}` : null
+}
+export async function uploadLogo(teamId: string, file: Blob): Promise<string> {
+  if (!supabase) throw new Error('Turma não conectada.')
+  const ext = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg'
+  const path = `${teamId}/logo-${crypto.randomUUID()}.${ext}`
+  const { error } = await supabase.storage
+    .from(LOGO_BUCKET)
+    .upload(path, file, { contentType: file.type, upsert: false, cacheControl: '31536000' })
+  if (error) throw new Error(error.message)
+  return path
+}
+export async function removeLogo(path: string) {
+  if (supabase && !/^(blob:|data:)/.test(path))
+    await supabase.storage.from(LOGO_BUCKET).remove([path])
+}
 export const supabasePhotos: PhotoStore = {
   async upload(path, file) {
     if (!supabase) throw new Error('Turma não conectada.')
