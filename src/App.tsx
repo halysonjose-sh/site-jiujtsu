@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Award,
+  CalendarClock,
   CalendarDays,
   Check,
   ChevronRight,
@@ -24,12 +25,18 @@ import { ActionButton } from './components/ActionButton'
 import { belts, progress, type Belt } from './domain/rules'
 import {
   friendlyError,
+  isStaff,
   loadDashboard,
+  supabasePhotos,
   rpc,
   supabase,
+  type Call,
   type Dashboard,
   type StudentView,
+  type Team,
 } from './lib/api'
+import { Agenda, UpcomingClasses, dayLabel, presenceLabel, timeLabel } from './components/Classes'
+import { zonedToUtc } from './domain/schedule'
 import { createDemo } from './lib/demo'
 import { useConnection } from './lib/useConnection'
 
@@ -339,15 +346,16 @@ function StudentSummary({
   student: s,
   goal,
   teacher,
-  mutate,
+  call,
+  onChanged,
 }: {
   student: StudentView
   goal: number | null
   teacher: boolean
-  mutate: Mutate
+  call: Call
+  onChanged: () => Promise<void>
 }) {
-  const p = progress(s.cycle, goal),
-    attended = s.attendances.includes(s.today)
+  const p = progress(s.cycle, goal)
   return (
     <>
       <section className="rank-card">
@@ -383,32 +391,7 @@ function StudentSummary({
           <span className="muted">Desde a última graduação</span>
         </section>
       </div>
-      {!teacher && (
-        <section className="checkin-card">
-          <div className="checkin-icon">
-            <CalendarDays size={24} />
-          </div>
-          <div className="checkin-copy">
-            <h3>{attended ? 'Mais um treino na conta.' : 'Hoje é dia de evoluir.'}</h3>
-            <p>{dateLabel(s.today)} · Uma presença por dia</p>
-          </div>
-          <ActionButton
-            className="primary"
-            disabled={attended}
-            action={() => mutate('mark_attendance')}
-          >
-            {attended ? (
-              <>
-                <Check size={19} /> Presença registrada hoje
-              </>
-            ) : (
-              <>
-                <Plus size={19} /> Registrar presença
-              </>
-            )}
-          </ActionButton>
-        </section>
-      )}
+      {!teacher && <UpcomingClasses call={call} today={s.today} onChanged={onChanged} />}
       {p && (
         <section className="goal-card">
           <div className="section-heading">
@@ -438,10 +421,21 @@ function StudentSummary({
     </>
   )
 }
-function History({ s, teacher, mutate }: { s: StudentView; teacher: boolean; mutate: Mutate }) {
+function History({
+  s,
+  teacher,
+  mutate,
+  call,
+}: {
+  s: StudentView
+  teacher: boolean
+  mutate: Mutate
+  call: Call
+}) {
   const [tab, setTab] = useState<'presencas' | 'graduacoes'>('presencas'),
     [limit, setLimit] = useState(12),
-    [correction, setCorrection] = useState(s.today)
+    [correction, setCorrection] = useState(s.today),
+    [correctionTime, setCorrectionTime] = useState('19:00')
   return (
     <section className="history-card">
       <div className="section-heading">
@@ -480,16 +474,28 @@ function History({ s, teacher, mutate }: { s: StudentView; teacher: boolean; mut
                   onChange={(e) => setCorrection(e.target.value)}
                 />
               </Field>
+              <Field label="Horário">
+                <input
+                  type="time"
+                  value={correctionTime}
+                  onChange={(e) => setCorrectionTime(e.target.value)}
+                />
+              </Field>
               <ActionButton
                 className="secondary"
-                disabled={!correction || correction > s.today}
-                action={() =>
-                  mutate('correct_attendance', {
-                    p_student: s.id,
-                    p_date: correction,
-                    p_action: 'add',
-                  })
+                disabled={
+                  !correction ||
+                  correction > s.today ||
+                  new Date(zonedToUtc(correction, correctionTime)).getTime() > Date.now()
                 }
+                action={async () => {
+                  const session = await call<string>('create_session', {
+                    p_title: 'Treino',
+                    p_starts_at: zonedToUtc(correction, correctionTime),
+                    p_duration: 60,
+                  })
+                  await mutate('teacher_add_presence', { p_session: session, p_student: s.id })
+                }}
                 success="Presença adicionada."
               >
                 <Plus size={17} /> Adicionar
@@ -501,34 +507,37 @@ function History({ s, teacher, mutate }: { s: StudentView; teacher: boolean; mut
               Nenhuma presença ainda. Sua caminhada começa no primeiro treino.
             </p>
           ) : (
-            s.attendances.slice(0, limit).map((date) => (
-              <div className="history-row" key={date}>
+            s.attendances.slice(0, limit).map((a) => (
+              <div
+                className={'history-row ' + (a.status === 'rejeitada' ? 'cancelled' : '')}
+                key={a.sessionId}
+              >
                 <span className="history-icon">
                   <Check size={17} />
                 </span>
                 <div>
-                  <strong>Treino de jiu-jítsu</strong>
+                  <strong>{a.title}</strong>
                   <span>
-                    {dateLabel(date)} de {date.slice(0, 4)}
+                    {dayLabel(a.startsAt)} de {a.date.slice(0, 4)} · {timeLabel(a.startsAt)}
                   </span>
                 </div>
-                {teacher ? (
+                <span className="status-pill">
+                  {a.status === 'confirmada' ? 'Presente' : presenceLabel[a.status]}
+                </span>
+                {teacher && (
                   <ActionButton
-                    label={`Remover presença de ${dateLabel(date)}`}
+                    label={`Remover presença de ${dayLabel(a.startsAt)}`}
                     className="icon-button danger"
-                    confirm={`Remover a presença de ${dateLabel(date)}? A contagem de aulas será atualizada.`}
+                    confirm={`Remover a presença de ${dayLabel(a.startsAt)}? A contagem de aulas será atualizada.`}
                     action={() =>
-                      mutate('correct_attendance', {
+                      mutate('teacher_remove_presence', {
                         p_student: s.id,
-                        p_date: date,
-                        p_action: 'remove',
+                        p_session: a.sessionId,
                       })
                     }
                   >
                     <Trash2 size={17} />
                   </ActionButton>
-                ) : (
-                  <span className="status-pill">Presente</span>
                 )}
               </div>
             ))
@@ -680,9 +689,22 @@ function TeacherActions({ s, mutate }: { s: StudentView; mutate: Mutate }) {
     </section>
   )
 }
-function Settings({ goal, mutate }: { goal: number | null; mutate: Mutate }) {
+function Settings({
+  goal,
+  mutate,
+  team,
+  owner,
+}: {
+  goal: number | null
+  mutate: Mutate
+  team: Team | null
+  owner: boolean
+}) {
   const [value, setValue] = useState(goal?.toString() ?? ''),
-    [code, setCode] = useState('')
+    [code, setCode] = useState(''),
+    [name, setName] = useState(team?.name ?? ''),
+    [primary, setPrimary] = useState(team?.primaryColor ?? '#234c3a'),
+    [accent, setAccent] = useState(team?.accentColor ?? '#cee68b')
   const valid =
     value === '' ||
     (Number.isInteger(Number(value)) && Number(value) > 0 && Number(value) <= 2147483647)
@@ -701,20 +723,24 @@ function Settings({ goal, mutate }: { goal: number | null; mutate: Mutate }) {
         />
       </Field>
       <p className="field-help">Deixe vazio para não usar meta. Ela nunca impede uma graduação.</p>
-      <Field label="Novo código da turma">
-        <input
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-          minLength={8}
-          maxLength={128}
-          autoComplete="off"
-          placeholder="Deixe vazio para manter o atual"
-        />
-      </Field>
-      <p className="field-help">
-        De 8 a 128 caracteres. Compartilhe somente com seus alunos. Alterar o código não afeta quem
-        já está cadastrado.
-      </p>
+      {owner && (
+        <>
+          <Field label="Novo código da turma">
+            <input
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              minLength={8}
+              maxLength={128}
+              autoComplete="off"
+              placeholder="Deixe vazio para manter o atual"
+            />
+          </Field>
+          <p className="field-help">
+            De 8 a 128 caracteres. Compartilhe somente com seus alunos. Alterar o código não afeta
+            quem já está cadastrado. Novos cadastros precisam da sua aprovação.
+          </p>
+        </>
+      )}
       <ActionButton
         className="primary"
         disabled={!valid || (code !== '' && code.trim().length < 8)}
@@ -729,6 +755,33 @@ function Settings({ goal, mutate }: { goal: number | null; mutate: Mutate }) {
       >
         Salvar configurações
       </ActionButton>
+      {owner && (
+        <div className="team-form">
+          <h2>Visual da equipe.</h2>
+          <p className="muted">Nome e cores aparecem para todos os alunos da equipe.</p>
+          <Field label="Nome da equipe">
+            <input value={name} maxLength={80} onChange={(e) => setName(e.target.value)} />
+          </Field>
+          <div className="form-grid">
+            <Field label="Cor principal">
+              <input type="color" value={primary} onChange={(e) => setPrimary(e.target.value)} />
+            </Field>
+            <Field label="Cor de destaque">
+              <input type="color" value={accent} onChange={(e) => setAccent(e.target.value)} />
+            </Field>
+          </div>
+          <ActionButton
+            className="secondary"
+            disabled={name.trim().length < 2}
+            success="Visual atualizado."
+            action={() =>
+              mutate('update_team', { p_name: name, p_primary: primary, p_accent: accent })
+            }
+          >
+            Salvar visual
+          </ActionButton>
+        </div>
+      )}
     </section>
   )
 }
@@ -804,12 +857,29 @@ export default function App() {
       generation.current++
     }
   }, [refresh])
+  const call: Call = useCallback(
+    async <T,>(name: string, args?: Record<string, unknown>) => {
+      if (!navigator.onLine) throw new Error('Você está sem conexão.')
+      return demo ? demo.call<T>(name, args) : rpc<T>(name, args)
+    },
+    [demo],
+  ) as Call
   const mutate: Mutate = async (name, args) => {
     if (!online || !navigator.onLine) throw new Error('Você está sem conexão.')
-    if (demo) await demo.mutate(name, args)
-    else await rpc(name, args)
+    await call(name, args)
     await refresh()
   }
+  const team = data?.team
+  useEffect(() => {
+    const root = document.documentElement.style
+    if (team) {
+      root.setProperty('--green', team.primaryColor)
+      root.setProperty('--accent', team.accentColor)
+    } else {
+      root.removeProperty('--green')
+      root.removeProperty('--accent')
+    }
+  }, [team])
   async function logout() {
     if (supabase && !demo) {
       const { error } = await supabase.auth.signOut({ scope: 'local' })
@@ -873,11 +943,43 @@ export default function App() {
         )}
       </div>
     )
-  const teacher = data.profile.role === 'professor',
+  if (data.status !== 'ativo')
+    return (
+      <div className="loading-screen">
+        <Brand />
+        <h1>{data.status === 'pendente' ? 'Cadastro recebido!' : 'Acesso bloqueado'}</h1>
+        <p role="status">
+          {data.status === 'pendente'
+            ? `Seu professor da ${data.team?.name ?? 'equipe'} precisa aprovar sua entrada. Volte aqui depois.`
+            : 'Fale com seu professor para liberar o acesso.'}
+        </p>
+        <ActionButton className="primary" action={refresh}>
+          Verificar de novo
+        </ActionButton>
+        <ActionButton className="text-button" action={logout}>
+          Sair
+        </ActionButton>
+      </div>
+    )
+  const teacher = isStaff(data.profile.role),
+    owner = data.profile.role === 'dono',
+    active = data.students.filter((s) => s.memberStatus === 'ativo'),
+    pendingMembers = data.students.filter((s) => s.memberStatus === 'pendente'),
     student = teacher ? data.students.find((s) => s.id === selected) : data.students[0],
-    filtered = data.students.filter((s) =>
+    filtered = active.filter((s) =>
       s.name.toLocaleLowerCase('pt-BR').includes(search.toLocaleLowerCase('pt-BR')),
     )
+  const pages = teacher
+    ? [
+        { id: 'overview', label: 'Alunos', icon: <Users size={20} /> },
+        { id: 'agenda', label: 'Calendário', icon: <CalendarClock size={20} /> },
+        { id: 'settings', label: 'Configurações', icon: <Settings2 size={20} /> },
+      ]
+    : [
+        { id: 'overview', label: 'Meu progresso', icon: <LayoutDashboard size={20} /> },
+        { id: 'agenda', label: 'Treinos', icon: <CalendarClock size={20} /> },
+        { id: 'history', label: 'Histórico', icon: <CalendarDays size={20} /> },
+      ]
   function nav(next: string) {
     setPage(next)
     setSelected(null)
@@ -903,19 +1005,13 @@ export default function App() {
       )}
       <aside className="sidebar">
         <Brand />
-        <span className="sidebar-label">MINHA TURMA</span>
+        <span className="sidebar-label">{(data.team?.name ?? 'Minha turma').toUpperCase()}</span>
         <nav aria-label="Navegação principal">
-          <button className={page === 'overview' ? 'active' : ''} onClick={() => nav('overview')}>
-            {teacher ? <Users size={20} /> : <LayoutDashboard size={20} />}{' '}
-            {teacher ? 'Alunos' : 'Meu progresso'}
-          </button>
-          <button
-            className={page === (teacher ? 'settings' : 'history') ? 'active' : ''}
-            onClick={() => nav(teacher ? 'settings' : 'history')}
-          >
-            {teacher ? <Settings2 size={20} /> : <CalendarDays size={20} />}{' '}
-            {teacher ? 'Configurações' : 'Histórico'}
-          </button>
+          {pages.map((p) => (
+            <button key={p.id} className={page === p.id ? 'active' : ''} onClick={() => nav(p.id)}>
+              {p.icon} {p.label}
+            </button>
+          ))}
         </nav>
         <div className="sidebar-bottom">
           <Install />
@@ -929,7 +1025,7 @@ export default function App() {
             </span>
             <div>
               <strong>{data.profile.name}</strong>
-              <span>{teacher ? 'Professor' : 'Aluno'}</span>
+              <span>{owner ? 'Dono da equipe' : teacher ? 'Professor' : 'Aluno'}</span>
             </div>
             <ActionButton className="icon-button" label="Sair" action={logout}>
               <LogOut size={18} />
@@ -943,7 +1039,8 @@ export default function App() {
             <Brand />
           </div>
           <span className="desktop-breadcrumb">
-            Minha turma <ChevronRight size={14} /> {teacher ? 'Área do professor' : 'Área do aluno'}
+            {data.team?.name ?? 'Minha turma'} <ChevronRight size={14} />{' '}
+            {teacher ? 'Área do professor' : 'Área do aluno'}
           </span>
           <span className="date-chip">
             <span /> {dateLabel(data.today)}
@@ -978,22 +1075,30 @@ export default function App() {
                   ? student?.name
                   : page === 'settings'
                     ? 'Configurações'
-                    : page === 'history'
-                      ? 'Sua caminhada.'
-                      : teacher
-                        ? 'Sua turma.'
-                        : `Olá, ${data.profile.name.split(' ')[0]}.`}
+                    : page === 'agenda'
+                      ? teacher
+                        ? 'Calendário.'
+                        : 'Treinos da equipe.'
+                      : page === 'history'
+                        ? 'Sua caminhada.'
+                        : teacher
+                          ? 'Sua turma.'
+                          : `Olá, ${data.profile.name.split(' ')[0]}.`}
               </h1>
               <p>
                 {selected
                   ? 'Cada treino conta na evolução do aluno.'
                   : page === 'settings'
                     ? 'Organize as referências e o acesso da turma.'
-                    : page === 'history'
-                      ? 'Um registro de cada passo no tatame.'
-                      : teacher
-                        ? 'Acompanhe a presença e a evolução de cada aluno.'
-                        : 'Continue aparecendo. O resto é consequência.'}
+                    : page === 'agenda'
+                      ? teacher
+                        ? 'Aulas, fotos, descrições, check-ins e presenças.'
+                        : 'Toque num dia para ver o que foi treinado e as fotos.'
+                      : page === 'history'
+                        ? 'Um registro de cada passo no tatame.'
+                        : teacher
+                          ? 'Acompanhe a presença e a evolução de cada aluno.'
+                          : 'Continue aparecendo. O resto é consequência.'}
               </p>
             </div>
             {loading && (
@@ -1003,23 +1108,67 @@ export default function App() {
             )}
           </div>
           {page === 'settings' && teacher ? (
-            <Settings goal={data.goal} mutate={mutate} />
+            <Settings goal={data.goal} mutate={mutate} team={data.team} owner={owner} />
+          ) : page === 'agenda' ? (
+            <Agenda
+              call={call}
+              today={data.today}
+              staff={teacher}
+              photos={demo ? demo.photos : supabasePhotos}
+              onChanged={refresh}
+            />
           ) : teacher && !student ? (
             <>
               <div className="teacher-overview">
                 <div>
                   <Users size={21} />
-                  <strong>{data.students.length}</strong>
+                  <strong>{active.length}</strong>
                   <span>alunos na turma</span>
                 </div>
                 <div>
                   <Check size={21} />
                   <strong>
-                    {data.students.filter((s) => s.attendances.includes(data.today)).length}
+                    {
+                      active.filter((s) =>
+                        s.attendances.some(
+                          (a) => a.date === data.today && a.status === 'confirmada',
+                        ),
+                      ).length
+                    }
                   </strong>
                   <span>presentes hoje</span>
                 </div>
               </div>
+              {pendingMembers.length > 0 && (
+                <section className="student-list">
+                  <div className="section-heading">
+                    <h2>Aguardando aprovação</h2>
+                  </div>
+                  {pendingMembers.map((s) => (
+                    <div className="history-row" key={s.id}>
+                      <div>
+                        <strong>{s.name}</strong>
+                        <span>Cadastrou-se com o código da turma</span>
+                      </div>
+                      <ActionButton
+                        className="primary"
+                        label={`Aprovar ${s.name}`}
+                        action={() => mutate('approve_member', { p_user: s.id, p_approve: true })}
+                      >
+                        <Check size={16} /> Aprovar
+                      </ActionButton>
+                      <ActionButton
+                        className="text-button danger"
+                        label={`Recusar ${s.name}`}
+                        confirm={`Recusar a entrada de ${s.name}? A pessoa não terá acesso à equipe.`}
+                        action={() => mutate('approve_member', { p_user: s.id, p_approve: false })}
+                      >
+                        Recusar
+                      </ActionButton>
+                    </div>
+                  ))}
+                </section>
+              )}
               <section className="student-list">
                 <div className="section-heading">
                   <h2>Alunos</h2>
@@ -1062,7 +1211,7 @@ export default function App() {
                   ))
                 ) : (
                   <p className="empty">
-                    {data.students.length
+                    {active.length
                       ? 'Nenhum aluno com esse nome.'
                       : 'Seus alunos aparecerão aqui quando se cadastrarem com o código da turma.'}
                   </p>
@@ -1077,10 +1226,17 @@ export default function App() {
                     student={student}
                     goal={data.goal}
                     teacher={teacher}
-                    mutate={mutate}
+                    call={call}
+                    onChanged={refresh}
                   />
                 )}
-                <History key={student.id} s={student} teacher={teacher} mutate={mutate} />
+                <History
+                  key={student.id}
+                  s={student}
+                  teacher={teacher}
+                  mutate={mutate}
+                  call={call}
+                />
               </div>
               {teacher && <TeacherActions key={student.id} s={student} mutate={mutate} />}
             </div>
@@ -1095,17 +1251,12 @@ export default function App() {
         </main>
       </div>
       <nav className="bottom-nav" aria-label="Navegação no celular">
-        <button className={page === 'overview' ? 'active' : ''} onClick={() => nav('overview')}>
-          {teacher ? <Users size={21} /> : <LayoutDashboard size={21} />}
-          <span>{teacher ? 'Alunos' : 'Meu progresso'}</span>
-        </button>
-        <button
-          className={page === (teacher ? 'settings' : 'history') ? 'active' : ''}
-          onClick={() => nav(teacher ? 'settings' : 'history')}
-        >
-          {teacher ? <Settings2 size={21} /> : <CalendarDays size={21} />}
-          <span>{teacher ? 'Configurações' : 'Histórico'}</span>
-        </button>
+        {pages.map((p) => (
+          <button key={p.id} className={page === p.id ? 'active' : ''} onClick={() => nav(p.id)}>
+            {p.icon}
+            <span>{p.label}</span>
+          </button>
+        ))}
       </nav>
     </div>
   )

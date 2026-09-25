@@ -1,34 +1,64 @@
 import { PGlite } from '@electric-sql/pglite'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { beforeAll, afterAll, describe, it, expect } from 'vitest'
+
 let db: PGlite
-const teacher = '00000000-0000-4000-8000-000000000001',
-  a = '00000000-0000-4000-8000-000000000002',
-  b = '00000000-0000-4000-8000-000000000003'
-async function asUser<T = Record<string, unknown>>(
-  id: string | null,
+const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
+const teacher = id(1),
+  a = id(2),
+  b = id(3),
+  novo = id(4),
+  outroProf = id(5),
+  outroAluno = id(6)
+const migrations = readdirSync('supabase/migrations').sort()
+
+async function asUser<T = Record<string, any>>(
+  uid: string | null,
   sql: string,
   params: unknown[] = [],
 ) {
   return db.transaction(async (tx) => {
-    await tx.exec(`set local role ${id ? 'authenticated' : 'anon'}`)
-    await tx.query("select set_config('request.jwt.claim.sub',$1,true)", [id ?? ''])
+    await tx.exec(`set local role ${uid ? 'authenticated' : 'anon'}`)
+    await tx.query("select set_config('request.jwt.claim.sub',$1,true)", [uid ?? ''])
     return tx.query<T>(sql, params)
   })
 }
-async function signup(id: string, code: string, role = 'aluno') {
+const one = async (uid: string, sql: string, params: unknown[] = []) =>
+  Object.values((await asUser(uid, sql, params)).rows[0] ?? {})[0] as any
+async function signup(uid: string, code: string, role = 'aluno') {
   return db.query('insert into auth.users(id,email,raw_user_meta_data) values ($1,$2,$3::jsonb)', [
-    id,
-    id + '@test.local',
-    JSON.stringify({ name: 'Aluno teste', class_code: code, role }),
+    uid,
+    uid + '@test.local',
+    JSON.stringify({ name: 'Pessoa ' + uid.slice(-2), class_code: code, role }),
   ])
 }
+const setCode = (code: string, where = '') =>
+  db.query(
+    `update public.teams set code_hash=encode(sha256(convert_to(code_salt || $1,'UTF8')),'hex') ${where}`,
+    [code],
+  )
+/** Cria aula com horário relativo a agora, sem passar pelas regras (preparação de cenário). */
+async function sessionAt(offset: string, status = 'prevista', team?: string) {
+  const r = await db.query<{ id: string }>(
+    `insert into public.class_sessions(team_id,title,starts_at,duration_min,status)
+     values (coalesce($2::uuid,(select id from public.teams where slug='minha-turma')),'Aula teste',now()+$1::interval,60,$3) returning id`,
+    [offset, team ?? null, status],
+  )
+  return r.rows[0].id
+}
+const n = async (sql: string, params: unknown[] = []) =>
+  Number(Object.values((await db.query<any>(sql, params)).rows[0])[0])
+
 beforeAll(async () => {
   db = new PGlite()
   await db.exec(
-    `create role anon nologin; create role authenticated nologin; create schema auth; create table auth.users(id uuid primary key,email text,raw_user_meta_data jsonb default '{}'); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$; grant usage on schema auth to anon,authenticated; grant execute on function auth.uid() to anon,authenticated;`,
+    `create role anon nologin; create role authenticated nologin; create schema auth;
+     create table auth.users(id uuid primary key,email text,raw_user_meta_data jsonb default '{}');
+     create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
+     grant usage on schema auth to anon,authenticated; grant execute on function auth.uid() to anon,authenticated;`,
   )
-  await db.exec(readFileSync('supabase/migrations/202609050001_tatame.sql', 'utf8'))
+  // Estado da v1 com dados antes de migrar.
+  await db.exec(readFileSync('supabase/migrations/' + migrations[0], 'utf8'))
   await db.exec(
     "update public.class_settings set code_hash=encode(sha256(convert_to(code_salt || 'TURMA-TESTE','UTF8')),'hex')",
   )
@@ -36,137 +66,358 @@ beforeAll(async () => {
   await db.query("update public.profiles set role='professor' where id=$1", [teacher])
   await signup(a, 'TURMA-TESTE', 'professor')
   await signup(b, 'TURMA-TESTE')
+  await asUser(a, 'select public.mark_attendance()')
+  await asUser(teacher, "select public.correct_attendance($1,public.today_sp()-3,'add')", [a])
+  await asUser(teacher, "select public.set_initial($1,'azul',2,0)", [a])
+  for (const m of migrations.slice(1))
+    await db.exec(readFileSync('supabase/migrations/' + m, 'utf8'))
 })
 afterAll(async () => {
   await db?.close()
 })
-describe('banco real PostgreSQL: cadastro e RLS', () => {
+
+describe('migração da v1', () => {
+  it('turma vira equipe; professor vira dono; alunos ativos', async () => {
+    const rows = (
+      await db.query('select user_id,role,status from public.team_members order by user_id')
+    ).rows
+    expect(rows).toEqual([
+      { user_id: teacher, role: 'dono', status: 'ativo' },
+      { user_id: a, role: 'aluno', status: 'ativo' },
+      { user_id: b, role: 'aluno', status: 'ativo' },
+    ])
+  })
+  it('presenças antigas viram aulas realizadas e continuam contando', async () => {
+    const d = await one(a, 'select public.student_detail($1)', [a])
+    expect(d.total).toBe(2)
+    expect(d.belt).toBe('azul')
+    expect(d.attendances.map((x: any) => x.status)).toEqual(['confirmada', 'confirmada'])
+    expect((await db.query('select distinct status from public.class_sessions')).rows).toEqual([
+      { status: 'realizada' },
+    ])
+  })
+  it('API antiga foi removida', async () => {
+    await expect(db.query('select * from public.class_settings')).rejects.toThrow()
+    await expect(asUser(a, 'select public.mark_attendance()')).rejects.toThrow()
+  })
+})
+
+describe('cadastro, aprovação e isolamento', () => {
   it('rejeita código inválido sem deixar perfil', async () => {
-    await expect(signup('00000000-0000-4000-8000-000000000009', 'ERRADO')).rejects.toThrow(/Código/)
+    await expect(signup(id(9), 'ERRADO-123')).rejects.toThrow(/Código/)
     expect(
-      (await db.query("select * from profiles where id='00000000-0000-4000-8000-000000000009'"))
-        .rows,
+      (await db.query('select * from public.profiles where id=$1', [id(9)])).rows,
     ).toHaveLength(0)
   })
-  it('ignora papel enviado pelo cadastro', async () => {
-    expect((await asUser(a, 'select role from public.profiles')).rows).toEqual([{ role: 'aluno' }])
-  })
-  it('aluno só lê a si; professor lê a turma; visitante não lê', async () => {
-    expect((await asUser(a, 'select * from public.profiles')).rows).toHaveLength(1)
-    expect((await asUser(teacher, 'select * from public.profiles')).rows).toHaveLength(3)
-    await expect(asUser(null, 'select * from public.profiles')).rejects.toThrow()
-  })
-  it('bloqueia alteração direta de papel e graduação', async () => {
-    await expect(asUser(a, "update public.profiles set role='professor'")).rejects.toThrow()
+  it('novo cadastro entra pendente, nunca professor, e não acessa dados', async () => {
+    await signup(novo, 'TURMA-TESTE', 'dono')
+    expect(
+      (await db.query('select role,status from public.team_members where user_id=$1', [novo])).rows,
+    ).toEqual([{ role: 'aluno', status: 'pendente' }])
+    const settings = await one(novo, 'select public.get_settings()')
+    expect(settings.status).toBe('pendente')
+    expect(settings.goal).toBeNull()
+    await expect(asUser(novo, 'select public.student_detail($1)', [novo])).rejects.toThrow()
     await expect(
-      asUser(
-        a,
-        "insert into public.graduations(student_id,kind,belt,degrees,actor_id) values ($1,'grau','azul',1,$1)",
-        [a],
-      ),
+      asUser(novo, 'select public.list_sessions(public.today_sp(),public.today_sp())'),
     ).rejects.toThrow()
   })
-  it('não expõe hash do código', async () => {
-    await expect(asUser(a, 'select code_hash from public.class_settings')).rejects.toThrow()
-    await expect(asUser(teacher, 'select code_hash from public.class_settings')).rejects.toThrow()
+  it('professor vê o pendente e aprova; aluno não aprova', async () => {
+    const list = await one(teacher, 'select public.list_students()')
+    expect(list.find((s: any) => s.id === novo).memberStatus).toBe('pendente')
+    await expect(asUser(a, 'select public.approve_member($1,true)', [novo])).rejects.toThrow()
+    await asUser(teacher, 'select public.approve_member($1,true)', [novo])
+    expect((await one(novo, 'select public.student_detail($1)', [novo])).total).toBe(0)
   })
-  it('remove código e papel dos metadados e protege auxiliares internas', async () => {
-    const metadata = (
-      await db.query<{ raw_user_meta_data: Record<string, string> }>(
-        'select raw_user_meta_data from auth.users where id=$1',
-        [a],
-      )
-    ).rows[0].raw_user_meta_data
-    expect(metadata.class_code).toBeUndefined()
-    expect(metadata.role).toBeUndefined()
+  it('equipes não se enxergam', async () => {
+    await db.query("insert into public.teams(slug,name) values ('outra-equipe','Outra equipe')")
+    await setCode('OUTRA-EQUIPE', "where slug='outra-equipe'")
+    await signup(outroProf, 'OUTRA-EQUIPE')
+    await signup(outroAluno, 'OUTRA-EQUIPE')
+    await db.query("update public.team_members set role='dono',status='ativo' where user_id=$1", [
+      outroProf,
+    ])
+    await asUser(outroProf, 'select public.approve_member($1,true)', [outroAluno])
+    expect((await one(outroProf, 'select public.list_students()')).map((s: any) => s.id)).toEqual([
+      outroAluno,
+    ])
+    await expect(asUser(outroProf, 'select public.student_detail($1)', [a])).rejects.toThrow()
+    await expect(asUser(outroProf, 'select public.approve_member($1,false)', [a])).rejects.toThrow()
+    expect((await asUser(outroProf, 'select id from public.profiles')).rows).toHaveLength(2)
+    expect((await asUser(teacher, 'select id from public.profiles')).rows).toHaveLength(4)
+    expect((await asUser(outroProf, 'select * from public.attendances')).rows).toHaveLength(0)
+  })
+  it('visitante e aluno não leem nem alteram tabelas internas', async () => {
+    await expect(asUser(null, 'select * from public.profiles')).rejects.toThrow()
+    await expect(asUser(a, 'select code_hash from public.teams')).rejects.toThrow()
+    await expect(asUser(a, 'select * from public.team_members')).rejects.toThrow()
+    await expect(asUser(a, "update public.team_members set role='dono'")).rejects.toThrow()
     await expect(
-      asUser(a, 'select public.handle_signup_internal(gen_random_uuid(),$1::jsonb)', [
-        JSON.stringify({ name: 'Invasor', class_code: 'TURMA-TESTE' }),
-      ]),
+      asUser(a, 'select public.generate_sessions(public.my_team(),public.today_sp()+5)'),
     ).rejects.toThrow()
   })
 })
-describe('operações protegidas', () => {
-  it('presenças concorrentes e reenvio resultam em uma aula', async () => {
-    await Promise.all([
-      asUser(a, 'select public.mark_attendance()'),
-      asUser(a, 'select public.mark_attendance()'),
+
+describe('aulas padrão', () => {
+  let schedule = ''
+  const count = (s: string) =>
+    n('select count(*) from public.class_sessions where schedule_id=$1', [s])
+  it('professor cria horário e as aulas são geradas sem duplicar', async () => {
+    schedule = await one(
+      teacher,
+      "select public.create_schedule('Adulto','{0,1,2,3,4,5,6}',time '23:30',60,public.today_sp()+1)",
+    )
+    expect(await count(schedule)).toBe(28)
+    await asUser(a, 'select public.list_sessions(public.today_sp(),public.today_sp()+30)')
+    expect(await count(schedule)).toBe(30)
+    await asUser(a, 'select public.list_sessions(public.today_sp(),public.today_sp()+30)')
+    expect(await count(schedule)).toBe(30)
+    const t = (
+      await db.query(
+        "select distinct to_char(starts_at at time zone 'America/Sao_Paulo','HH24:MI') as h from public.class_sessions where schedule_id=$1",
+        [schedule],
+      )
+    ).rows
+    expect(t).toEqual([{ h: '23:30' }])
+  })
+  it('rejeita dados inválidos e aluno não cria horário', async () => {
+    for (const sql of [
+      "select public.create_schedule('Adulto','{}',time '07:00',60,public.today_sp())",
+      "select public.create_schedule('Adulto','{1,1}',time '07:00',60,public.today_sp())",
+      "select public.create_schedule('Adulto','{7}',time '07:00',60,public.today_sp())",
+      "select public.create_schedule('Adulto','{1}',time '07:00',5,public.today_sp())",
+      "select public.create_schedule('Adulto','{1}',time '07:00',60,public.today_sp()-1)",
     ])
-    expect((await asUser(a, 'select * from public.attendances')).rows).toHaveLength(1)
-    await asUser(b, 'select public.mark_attendance()')
-    expect((await asUser(b, 'select * from public.attendances')).rows).toHaveLength(1)
-  })
-  it('aluno não corrige, não concede grau e não acessa resumo alheio', async () => {
+      await expect(asUser(teacher, sql)).rejects.toThrow()
     await expect(
-      asUser(a, "select public.correct_attendance($1,current_date,'add')", [b]),
-    ).rejects.toThrow()
-    await expect(
-      asUser(a, "select public.graduate_student($1,'grau',gen_random_uuid(),0)", [a]),
-    ).rejects.toThrow()
-    await expect(asUser(a, 'select public.student_detail($1)', [b])).rejects.toThrow()
-  })
-  it('professor corrige passado e bloqueia futuro', async () => {
-    await asUser(teacher, "select public.correct_attendance($1,public.today_sp()-2,'add')", [a])
-    expect((await asUser(a, 'select * from public.attendances')).rows).toHaveLength(2)
-    await asUser(teacher, "select public.correct_attendance($1,public.today_sp()-2,'remove')", [a])
-    expect((await asUser(a, 'select * from public.attendances')).rows).toHaveLength(1)
-    await expect(
-      asUser(teacher, "select public.correct_attendance($1,public.today_sp()+1,'add')", [a]),
+      asUser(a, "select public.create_schedule('Adulto','{1}',time '07:00',60,public.today_sp())"),
     ).rejects.toThrow()
   })
-  it('define situação inicial uma vez; rejeita graus inválidos', async () => {
+  it('editar vale a partir da data escolhida, sem mexer em aula com check-in', async () => {
+    const target = (
+      await db.query<{ id: string }>(
+        "select id from public.class_sessions where schedule_id=$1 and (starts_at at time zone 'America/Sao_Paulo')::date=public.today_sp()+10",
+        [schedule],
+      )
+    ).rows[0].id
+    await asUser(a, 'select public.checkin($1)', [target])
     await expect(
-      asUser(teacher, "select public.set_initial($1,'branca',5,0)", [b]),
+      asUser(
+        teacher,
+        "select public.update_schedule($1,'Adulto','{1}',time '19:00',60,public.today_sp())",
+        [schedule],
+      ),
+    ).rejects.toThrow(/amanhã/)
+    const next = await one(
+      teacher,
+      "select public.update_schedule($1,'Adulto noite','{0,1,2,3,4,5,6}',time '19:00',90,public.today_sp()+5)",
+      [schedule],
+    )
+    expect(next).not.toBe(schedule)
+    expect(
+      await n('select valid_until - public.today_sp() from public.class_schedules where id=$1', [
+        schedule,
+      ]),
+    ).toBe(4)
+    expect(
+      await n(
+        "select count(*) from public.class_sessions where schedule_id=$1 and (starts_at at time zone 'America/Sao_Paulo')::date>=public.today_sp()+5",
+        [schedule],
+      ),
+    ).toBe(1) // só a aula que já tinha check-in
+    const hours = (
+      await db.query(
+        "select distinct to_char(starts_at at time zone 'America/Sao_Paulo','HH24:MI') as h, duration_min from public.class_sessions where schedule_id=$1",
+        [next],
+      )
+    ).rows
+    expect(hours).toEqual([{ h: '19:00', duration_min: 90 }])
+  })
+  it('encerrar remove aulas futuras sem check-in', async () => {
+    const [s] = (await one(teacher, 'select public.list_schedules()')).filter(
+      (x: any) => x.title === 'Adulto noite',
+    )
+    await asUser(teacher, 'select public.end_schedule($1,public.today_sp()+6)', [s.id])
+    expect(
+      await n(
+        "select count(*) from public.class_sessions where schedule_id=$1 and (starts_at at time zone 'America/Sao_Paulo')::date>public.today_sp()+6",
+        [s.id],
+      ),
+    ).toBe(0)
+  })
+})
+
+describe('check-in e presença por aula', () => {
+  it('check-in até 1 hora antes, sem duplicar, e desistência no prazo', async () => {
+    const s = await sessionAt('3 hours')
+    await Promise.all([
+      asUser(a, 'select public.checkin($1)', [s]),
+      asUser(a, 'select public.checkin($1)', [s]),
+    ])
+    expect(
+      (await db.query('select status,source from public.attendances where session_id=$1', [s]))
+        .rows,
+    ).toEqual([{ status: 'pendente', source: 'checkin' }])
+    const mine = (
+      await one(a, 'select public.list_sessions(public.today_sp()-1,public.today_sp()+1)')
+    ).find((x: any) => x.id === s)
+    expect(mine.mine).toBe('pendente')
+    expect(mine.pending).toBeNull() // contagem de revisão só para professor
+    await asUser(a, 'select public.cancel_checkin($1)', [s])
+    expect(
+      (await db.query('select * from public.attendances where session_id=$1', [s])).rows,
+    ).toHaveLength(0)
+    const late = await sessionAt('59 minutes')
+    await expect(asUser(a, 'select public.checkin($1)', [late])).rejects.toThrow(/1 hora/)
+    await expect(asUser(teacher, 'select public.checkin($1)', [s])).rejects.toThrow()
+    const otherTeam = (
+      await db.query<{ id: string }>("select id from public.teams where slug='outra-equipe'")
+    ).rows[0].id
+    const other = await sessionAt('3 hours', 'prevista', otherTeam)
+    await expect(asUser(a, 'select public.checkin($1)', [other])).rejects.toThrow()
+  })
+  it('professor aprova quem fez check-in; pendente e rejeitada não contam', async () => {
+    const s = await sessionAt('3 hours')
+    await asUser(a, 'select public.checkin($1)', [s])
+    await asUser(b, 'select public.checkin($1)', [s])
+    const before = (await one(a, 'select public.student_detail($1)', [a])).total
+    await expect(
+      asUser(teacher, "select public.review_presence($1,$2,'confirmada')", [s, a]),
+    ).rejects.toThrow(/início/)
+    await db.query(
+      "update public.class_sessions set starts_at=now()-interval '10 minutes' where id=$1",
+      [s],
+    )
+    await expect(
+      asUser(a, "select public.review_presence($1,$2,'confirmada')", [s, a]),
     ).rejects.toThrow()
-    await asUser(teacher, "select public.set_initial($1,'azul',2,0)", [a])
-    await expect(asUser(teacher, "select public.set_initial($1,'roxa',0,1)", [a])).rejects.toThrow()
+    await asUser(teacher, "select public.review_presence($1,$2,'confirmada')", [s, a])
+    await asUser(teacher, "select public.review_presence($1,$2,'rejeitada')", [s, b])
+    expect((await one(a, 'select public.student_detail($1)', [a])).total).toBe(before + 1)
+    expect(
+      (await db.query('select status from public.class_sessions where id=$1', [s])).rows[0].status,
+    ).toBe('realizada')
+    const detail = await one(teacher, 'select public.session_detail($1)', [s])
+    expect(
+      detail.students
+        .filter((x: any) => x.status)
+        .map((x: any) => x.status)
+        .sort(),
+    ).toEqual(['confirmada', 'rejeitada'])
   })
-  it('concede uma vez, detecta versão desatualizada e desfaz sem apagar presença', async () => {
-    const key = '11111111-1111-4111-8111-111111111111'
-    await asUser(teacher, "select public.graduate_student($1,'grau',$2,1)", [a, key])
-    await asUser(teacher, "select public.graduate_student($1,'grau',$2,1)", [a, key])
+  it('aluno que esqueceu o check-in: professor lança presença confirmada', async () => {
+    const s = await sessionAt('-2 hours', 'realizada')
+    const before = (await one(b, 'select public.student_detail($1)', [b])).total
+    await asUser(teacher, 'select public.teacher_add_presence($1,$2)', [s, b])
+    await asUser(teacher, 'select public.teacher_add_presence($1,$2)', [s, b])
+    expect((await one(b, 'select public.student_detail($1)', [b])).total).toBe(before + 1)
+    await expect(asUser(a, 'select public.teacher_add_presence($1,$2)', [s, a])).rejects.toThrow()
+    const future = await sessionAt('2 hours')
     await expect(
-      asUser(teacher, "select public.graduate_student($1,'grau',gen_random_uuid(),1)", [a]),
-    ).rejects.toThrow(/atualiz/)
-    let result = (await asUser<{ student_detail: any }>(a, 'select public.student_detail($1)', [a]))
-      .rows[0].student_detail
-    expect(result.belt).toBe('azul')
-    expect(result.degrees).toBe(3)
-    expect(result.total).toBe(1)
-    expect(result.cycle).toBe(0)
-    await asUser(teacher, 'select public.undo_graduation($1,$2,2)', [a, key])
-    result = (await asUser<{ student_detail: any }>(a, 'select public.student_detail($1)', [a]))
-      .rows[0].student_detail
-    expect(result.degrees).toBe(2)
-    expect(result.total).toBe(1)
-    expect(result.cycle).toBe(1)
+      asUser(teacher, 'select public.teacher_add_presence($1,$2)', [future, b]),
+    ).rejects.toThrow()
+    await asUser(teacher, 'select public.teacher_remove_presence($1,$2)', [s, b])
+    expect((await one(b, 'select public.student_detail($1)', [b])).total).toBe(before)
   })
-  it('meta opcional, inteira e positiva; código rotacionado', async () => {
-    await expect(asUser(teacher, 'select public.update_settings(0,null)')).rejects.toThrow()
-    await asUser(teacher, "select public.update_settings(30,'NOVO-CODIGO')")
-    await expect(signup('00000000-0000-4000-8000-000000000008', 'TURMA-TESTE')).rejects.toThrow()
-    await signup('00000000-0000-4000-8000-000000000008', 'NOVO-CODIGO')
-    expect((await asUser(a, 'select public.get_settings() as settings')).rows[0]).toEqual({
-      settings: { goal: 30 },
+  it('duas aulas no mesmo dia contam 2', async () => {
+    const before = (await one(b, 'select public.student_detail($1)', [b])).total
+    for (const off of ['-1 minute', '-2 minutes'])
+      await asUser(teacher, 'select public.teacher_add_presence($1,$2)', [
+        await sessionAt(off, 'realizada'),
+        b,
+      ])
+    expect((await one(b, 'select public.student_detail($1)', [b])).total).toBe(before + 2)
+  })
+  it('cancelar aula futura apaga check-ins pendentes; aluno não cancela', async () => {
+    const s = await sessionAt('5 hours')
+    await asUser(a, 'select public.checkin($1)', [s])
+    await expect(asUser(a, "select public.cancel_session($1,'x')", [s])).rejects.toThrow()
+    await asUser(teacher, "select public.cancel_session($1,'Feriado')", [s])
+    expect(
+      (await db.query('select status,cancel_reason from public.class_sessions where id=$1', [s]))
+        .rows[0],
+    ).toEqual({ status: 'cancelada', cancel_reason: 'Feriado' })
+    expect(
+      (await db.query('select * from public.attendances where session_id=$1', [s])).rows,
+    ).toHaveLength(0)
+    await expect(asUser(a, 'select public.checkin($1)', [s])).rejects.toThrow()
+    await expect(
+      asUser(teacher, 'select public.teacher_add_presence($1,$2)', [
+        await sessionAt('-1 hour', 'cancelada'),
+        a,
+      ]),
+    ).rejects.toThrow()
+  })
+  it('aula avulsa no passado nasce realizada', async () => {
+    const s = await one(
+      teacher,
+      "select public.create_session('Treino extra',now()-interval '1 day',60,'Raspagens')",
+    )
+    expect(
+      (await db.query('select status,description from public.class_sessions where id=$1', [s]))
+        .rows[0],
+    ).toEqual({ status: 'realizada', description: 'Raspagens' })
+  })
+})
+
+describe('papéis e configurações', () => {
+  it('dono promove professor; professor ajusta meta mas não o código', async () => {
+    await expect(asUser(a, "select public.set_member_role($1,'professor')", [b])).rejects.toThrow()
+    await asUser(teacher, "select public.set_member_role($1,'professor')", [b])
+    expect(await one(b, 'select public.is_teacher()')).toBe(true)
+    await asUser(b, 'select public.update_settings(20,null)')
+    await expect(asUser(b, "select public.update_settings(20,'NOVO-CODIGO-1')")).rejects.toThrow(
+      /dono/,
+    )
+    await expect(
+      asUser(b, "select public.set_member_role($1,'aluno')", [teacher]),
+    ).rejects.toThrow()
+    await expect(
+      asUser(teacher, "select public.set_member_role($1,'aluno')", [teacher]),
+    ).rejects.toThrow()
+    await asUser(teacher, "select public.update_settings(30,'NOVO-CODIGO-1')")
+    await expect(signup(id(10), 'TURMA-TESTE')).rejects.toThrow()
+    await signup(id(10), 'NOVO-CODIGO-1')
+    await expect(
+      asUser(teacher, "select public.update_settings(30,'OUTRA-EQUIPE')"),
+    ).rejects.toThrow(/outro código/)
+    expect((await one(a, 'select public.get_settings()')).goal).toBe(30)
+    await asUser(teacher, "select public.set_member_role($1,'aluno')", [b])
+  })
+  it('dono personaliza nome e cores; valores inválidos são recusados', async () => {
+    await asUser(teacher, "select public.update_team('Equipe Tigre','#112233','#aabbcc')")
+    expect((await one(a, 'select public.get_settings()')).team).toMatchObject({
+      name: 'Equipe Tigre',
+      primaryColor: '#112233',
     })
-  })
-  it('bloqueia revisão ausente e graduação fora do limite; promove sem exigir quatro graus', async () => {
     await expect(
-      asUser(teacher, "select public.graduate_student($1,'grau',gen_random_uuid(),null)", [b]),
-    ).rejects.toThrow()
-    await asUser(teacher, "select public.set_initial($1,'marrom',4,0)", [b])
-    await expect(
-      asUser(teacher, "select public.graduate_student($1,'grau',gen_random_uuid(),1)", [b]),
-    ).rejects.toThrow()
-    await asUser(teacher, "select public.graduate_student($1,'faixa',gen_random_uuid(),1)", [b])
-    await expect(
-      asUser(teacher, "select public.graduate_student($1,'grau',gen_random_uuid(),2)", [b]),
+      asUser(teacher, "select public.update_team('Equipe','vermelho','#aabbcc')"),
     ).rejects.toThrow()
     await expect(
-      asUser(teacher, "select public.graduate_student($1,'faixa',gen_random_uuid(),2)", [b]),
+      asUser(b, "select public.update_team('X Y','#112233','#aabbcc')"),
     ).rejects.toThrow()
   })
-  it('dia do servidor ignora timezone da sessão e contas não vinculadas não têm acesso', async () => {
+})
+
+describe('graduação continua protegida', () => {
+  it('concede uma vez, detecta versão desatualizada e desfaz', async () => {
+    const key = '11111111-1111-4111-8111-111111111111'
+    const rev = (await one(a, 'select public.student_detail($1)', [a])).revision
+    await asUser(teacher, "select public.graduate_student($1,'grau',$2,$3)", [a, key, rev])
+    await asUser(teacher, "select public.graduate_student($1,'grau',$2,$3)", [a, key, rev])
+    await expect(
+      asUser(teacher, "select public.graduate_student($1,'grau',gen_random_uuid(),$2)", [a, rev]),
+    ).rejects.toThrow(/atualiz/)
+    let d = await one(a, 'select public.student_detail($1)', [a])
+    expect([d.belt, d.degrees, d.cycle]).toEqual(['azul', 3, 0])
+    await asUser(teacher, 'select public.undo_graduation($1,$2,$3)', [a, key, d.revision])
+    d = await one(a, 'select public.student_detail($1)', [a])
+    expect(d.degrees).toBe(2)
+    await expect(
+      asUser(outroProf, "select public.graduate_student($1,'grau',gen_random_uuid(),0)", [a]),
+    ).rejects.toThrow()
+  })
+  it('dia do servidor ignora timezone da sessão', async () => {
     const r = await db.transaction(async (tx) => {
       await tx.exec("set local timezone='Pacific/Auckland'")
       return tx.query<{ ok: boolean }>(
@@ -174,8 +425,69 @@ describe('operações protegidas', () => {
       )
     })
     expect(r.rows[0].ok).toBe(true)
+  })
+})
+
+describe('diário de treinos', () => {
+  it('professor descreve a aula e adiciona fotos; aluno vê, mas não altera', async () => {
+    const s = await sessionAt('-3 hours', 'realizada')
+    const team = (
+      await db.query<{ id: string }>("select id from public.teams where slug='minha-turma'")
+    ).rows[0].id
+    await asUser(teacher, "select public.update_session_description($1,'Passagem de guarda')", [s])
     await expect(
-      asUser('00000000-0000-4000-8000-000000000099', 'select public.mark_attendance()'),
+      asUser(a, "select public.update_session_description($1,'x')", [s]),
     ).rejects.toThrow()
+    const photo = await one(teacher, 'select public.add_session_photo($1,$2,$3)', [
+      s,
+      `${team}/${s}/foto1.jpg`,
+      'Aquecimento',
+    ])
+    await expect(
+      asUser(a, 'select public.add_session_photo($1,$2,null)', [s, `${team}/${s}/foto2.jpg`]),
+    ).rejects.toThrow()
+    for (const bad of [`outra/${s}/x.jpg`, `${team}/${s}/../x.jpg`, `${team}/${s}/x.png`])
+      await expect(
+        asUser(teacher, 'select public.add_session_photo($1,$2,null)', [s, bad]),
+      ).rejects.toThrow(/inválido/)
+    const j = await one(a, 'select public.session_journal($1)', [s])
+    expect(j.description).toBe('Passagem de guarda')
+    expect(j.photos).toEqual([
+      { id: photo, path: `${team}/${s}/foto1.jpg`, caption: 'Aquecimento' },
+    ])
+    const listed = (
+      await one(a, 'select public.list_sessions(public.today_sp()-1,public.today_sp()+1)')
+    ).find((x: any) => x.id === s)
+    expect(listed.photos).toBe(1)
+    await expect(asUser(outroProf, 'select public.session_journal($1)', [s])).rejects.toThrow()
+    await expect(asUser(a, 'select public.delete_session_photo($1)', [photo])).rejects.toThrow()
+    await expect(
+      asUser(outroProf, 'select public.delete_session_photo($1)', [photo]),
+    ).rejects.toThrow()
+    expect(await one(teacher, 'select public.delete_session_photo($1)', [photo])).toBe(
+      `${team}/${s}/foto1.jpg`,
+    )
+    expect((await one(a, 'select public.session_journal($1)', [s])).photos).toEqual([])
+  })
+  it('sem fotos em aula futura e no máximo 20 por aula', async () => {
+    const team = (
+      await db.query<{ id: string }>("select id from public.teams where slug='minha-turma'")
+    ).rows[0].id
+    const future = await sessionAt('2 hours')
+    await expect(
+      asUser(teacher, 'select public.add_session_photo($1,$2,null)', [
+        future,
+        `${team}/${future}/a.jpg`,
+      ]),
+    ).rejects.toThrow(/início/)
+    const s = await sessionAt('-1 hour', 'realizada')
+    for (let i = 0; i < 20; i++)
+      await asUser(teacher, 'select public.add_session_photo($1,$2,null)', [
+        s,
+        `${team}/${s}/f${i}.jpg`,
+      ])
+    await expect(
+      asUser(teacher, 'select public.add_session_photo($1,$2,null)', [s, `${team}/${s}/f21.jpg`]),
+    ).rejects.toThrow(/20/)
   })
 })

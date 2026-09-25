@@ -1,6 +1,18 @@
 import { createClient } from '@supabase/supabase-js'
 import type { Belt } from '../domain/rules'
-export type Profile = { id: string; name: string; role: 'aluno' | 'professor'; revision: number }
+
+export type TeamRole = 'aluno' | 'professor' | 'dono'
+export type MemberStatus = 'pendente' | 'ativo' | 'bloqueado'
+export type PresenceStatus = 'pendente' | 'confirmada' | 'rejeitada'
+export type Profile = { id: string; name: string; role: TeamRole; revision: number }
+export type Team = {
+  id: string
+  name: string
+  slug: string
+  primaryColor: string
+  accentColor: string
+  logoPath: string | null
+}
 export type RankEvent = {
   id: string
   kind: 'initial' | 'grau' | 'faixa'
@@ -9,22 +21,124 @@ export type RankEvent = {
   date: string
   cancelled: boolean
 }
-export type StudentView = Profile & {
+export type AttendanceView = {
+  sessionId: string
+  date: string
+  title: string
+  startsAt: string
+  status: PresenceStatus
+  source: 'checkin' | 'professor'
+}
+export type StudentView = {
+  id: string
+  name: string
+  role: TeamRole
+  memberStatus: MemberStatus
+  revision: number
   belt: Belt
   degrees: number
   total: number
   cycle: number
   today: string
   initialSet: boolean
-  attendances: string[]
+  attendances: AttendanceView[]
   events: RankEvent[]
+}
+export type SessionView = {
+  id: string
+  title: string
+  startsAt: string
+  durationMin: number
+  status: 'prevista' | 'cancelada' | 'realizada'
+  cancelReason: string | null
+  description: string | null
+  scheduleId: string | null
+  photos: number
+  checkins: number
+  pending: number | null
+  confirmed: number | null
+  mine: PresenceStatus | null
+}
+export type SessionDetail = {
+  id: string
+  title: string
+  startsAt: string
+  durationMin: number
+  status: SessionView['status']
+  cancelReason: string | null
+  description: string | null
+  students?: { id: string; name: string; status: PresenceStatus | null; source: string | null }[]
+}
+export type SessionPhoto = { id: string; path: string; caption: string | null }
+export type SessionJournal = {
+  id: string
+  teamId: string
+  title: string
+  startsAt: string
+  durationMin: number
+  status: SessionView['status']
+  cancelReason: string | null
+  description: string | null
+  mine: PresenceStatus | null
+  present: number
+  photos: SessionPhoto[]
+}
+/** Arquivos das fotos do treino (Storage do Supabase ou memória na demonstração). */
+export type PhotoStore = {
+  upload(path: string, file: Blob): Promise<void>
+  urls(paths: string[]): Promise<Record<string, string>>
+  remove(path: string): Promise<void>
+}
+export const PHOTO_BUCKET = 'session-photos'
+export const supabasePhotos: PhotoStore = {
+  async upload(path, file) {
+    if (!supabase) throw new Error('Turma não conectada.')
+    const { error } = await supabase.storage
+      .from(PHOTO_BUCKET)
+      .upload(path, file, { contentType: file.type || 'image/jpeg', upsert: false })
+    if (error) throw new Error(error.message)
+  },
+  async urls(paths) {
+    if (!supabase || paths.length === 0) return {}
+    const { data, error } = await supabase.storage.from(PHOTO_BUCKET).createSignedUrls(paths, 3600)
+    if (error) throw new Error(error.message)
+    return Object.fromEntries(
+      (data ?? [])
+        .filter((d) => d.signedUrl && d.path)
+        .map((d) => [d.path!, d.signedUrl as string]),
+    )
+  },
+  async remove(path) {
+    if (!supabase) return
+    await supabase.storage.from(PHOTO_BUCKET).remove([path])
+  },
+}
+export type ScheduleView = {
+  id: string
+  title: string
+  weekdays: number[]
+  startTime: string
+  durationMin: number
+  validFrom: string
+  validUntil: string | null
+}
+export type Settings = {
+  goal: number | null
+  role: TeamRole
+  status: MemberStatus
+  team: Team
 }
 export type Dashboard = {
   profile: Profile
+  team: Team | null
+  status: MemberStatus
   students: StudentView[]
   goal: number | null
   today: string
 }
+/** Consulta ou ação no servidor (ou na demonstração). */
+export type Call = <T = unknown>(name: string, args?: Record<string, unknown>) => Promise<T>
+
 const url = import.meta.env.VITE_SUPABASE_URL,
   key = import.meta.env.VITE_SUPABASE_ANON_KEY
 export const supabase = url && key && key !== 'your-public-anon-key' ? createClient(url, key) : null
@@ -39,25 +153,36 @@ export async function rpc<T>(name: string, args?: Record<string, unknown>): Prom
   if (error) throw new Error(error.message)
   return data as T
 }
+export const isStaff = (role: TeamRole | undefined) => role === 'professor' || role === 'dono'
+
 export async function loadDashboard(id: string): Promise<Dashboard> {
   if (!supabase) throw new Error('Turma não conectada.')
   const { data: profile, error } = await supabase
     .from('profiles')
-    .select('id,name,role,revision')
+    .select('id,name,revision')
     .eq('id', id)
     .single()
   if (error || !profile)
     throw new Error(
       'Não foi possível carregar seu perfil. Verifique sua conexão e tente novamente.',
     )
-  const [settings, today, students] = await Promise.all([
-    rpc<{ goal: number | null }>('get_settings'),
+  const [settings, today] = await Promise.all([
+    rpc<Settings | null>('get_settings'),
     rpc<string>('today_sp'),
-    profile.role === 'professor'
-      ? rpc<StudentView[]>('list_students')
-      : rpc<StudentView>('student_detail', { p_student: id }).then((s) => [s]),
   ])
-  return { profile: profile as Profile, students, goal: settings.goal, today }
+  if (!settings) throw new Error('Sua conta não está vinculada a nenhuma equipe.')
+  const base = {
+    profile: { ...profile, role: settings.role } as Profile,
+    team: settings.team,
+    status: settings.status,
+    goal: settings.goal,
+    today,
+  }
+  if (settings.status !== 'ativo') return { ...base, students: [] }
+  const students = isStaff(settings.role)
+    ? await rpc<StudentView[]>('list_students')
+    : [await rpc<StudentView>('student_detail', { p_student: id })]
+  return { ...base, students }
 }
 export function friendlyError(error: unknown): string {
   const message =

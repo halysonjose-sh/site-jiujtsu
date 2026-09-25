@@ -15,17 +15,18 @@ const code = 'TESTE-' + crypto.randomUUID(),
   ids: string[] = [],
   password = 'Teste-local-' + crypto.randomUUID()
 let studentId: string, teacherId: string
-let previousSettings: any,
-  previousTeachers: any[] = []
+let teamId: string, sessionId: string
 async function call(client: SupabaseClient, name: string, args?: Record<string, unknown>) {
   const { data, error } = await client.rpc(name, args)
   if (error) throw error
   return data
 }
 beforeAll(async () => {
-  previousSettings = (await sql`select * from public.class_settings`)[0]
-  previousTeachers = await sql`select id from public.profiles where role='professor'`
-  await sql`update public.class_settings set code_hash=encode(sha256(convert_to(code_salt || ${code},'UTF8')),'hex')`
+  const slug = 'teste-' + crypto.randomUUID().slice(0, 8)
+  teamId = (
+    await sql`insert into public.teams(slug,name) values (${slug},'Equipe de teste') returning id`
+  )[0].id
+  await sql`update public.teams set code_hash=encode(sha256(convert_to(code_salt || ${code},'UTF8')),'hex') where id=${teamId}`
   for (const client of [teacher, aluno]) {
     const email = crypto.randomUUID() + '@tatame.test'
     const { data, error } = await admin.auth.admin.createUser({
@@ -40,20 +41,16 @@ beforeAll(async () => {
     if (login.error) throw login.error
   }
   ;[teacherId, studentId] = ids
-  await sql`update public.profiles set role='aluno' where role='professor'`
-  await sql`update public.profiles set role='professor' where id=${teacherId}`
+  await sql`update public.team_members set status='ativo' where team_id=${teamId}`
+  await sql`update public.team_members set role='dono' where user_id=${teacherId}`
+  sessionId = (
+    await sql`insert into public.class_sessions(team_id,title,starts_at,duration_min) values (${teamId},'Teste',now()+interval '3 hours',60) returning id`
+  )[0].id
 })
 afterAll(async () => {
   try {
-    for (const id of ids) {
-      await sql`delete from public.attendances where student_id=${id}`
-      await sql`delete from public.graduations where student_id=${id}`
-    }
+    await sql`delete from public.teams where id=${teamId}`
     for (const id of ids) await admin.auth.admin.deleteUser(id)
-    if (previousSettings)
-      await sql`update public.class_settings set goal=${previousSettings.goal},code_hash=${previousSettings.code_hash},code_salt=${previousSettings.code_salt}`
-    for (const p of previousTeachers)
-      await sql`update public.profiles set role='professor' where id=${p.id}`
   } finally {
     await sql.end()
   }
@@ -65,13 +62,15 @@ it('signup inválido falha e signup público nunca cria professor', async () => 
     options: { data: { name: 'Aluno inválido', class_code: 'INCORRETO' } },
   })
   expect(error).not.toBeNull()
-  const { data } = await aluno.from('profiles').select('role')
-  expect(data).toEqual([{ role: 'aluno' }])
+  const members = await sql`select role,status from public.team_members where user_id=${studentId}`
+  expect(members).toEqual([{ role: 'aluno', status: 'ativo' }])
 })
-it('requisições HTTP paralelas não duplicam presença ou grau', async () => {
-  await Promise.all(Array.from({ length: 8 }, () => call(aluno, 'mark_attendance')))
-  const s = await call(aluno, 'student_detail', { p_student: studentId })
-  expect(s.total).toBe(1)
+it('requisições HTTP paralelas não duplicam check-in ou grau', async () => {
+  await Promise.all(
+    Array.from({ length: 8 }, () => call(aluno, 'checkin', { p_session: sessionId })),
+  )
+  const rows = await sql`select status from public.attendances where session_id=${sessionId}`
+  expect(rows).toEqual([{ status: 'pendente' }])
   const args = { p_student: studentId, p_kind: 'grau', p_key: crypto.randomUUID(), p_revision: 0 }
   await Promise.all([
     call(teacher, 'graduate_student', args),
