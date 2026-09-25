@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { LoaderCircle } from 'lucide-react'
 import { friendlyError } from '../lib/api'
+import { useToast } from './Toast'
 export function ActionButton({
   children,
   action,
   success,
+  undo,
   confirm,
   disabled,
   className = '',
@@ -13,6 +15,7 @@ export function ActionButton({
   children: ReactNode
   action: () => Promise<unknown>
   success?: string
+  undo?: () => Promise<unknown>
   confirm?: string
   disabled?: boolean
   className?: string
@@ -22,6 +25,7 @@ export function ActionButton({
     [message, setMessage] = useState(''),
     [error, setError] = useState(''),
     [asking, setAsking] = useState(false)
+  const toast = useToast()
   const locked = useRef(false),
     dialog = useRef<HTMLDialogElement>(null),
     trigger = useRef<HTMLButtonElement>(null)
@@ -41,6 +45,7 @@ export function ActionButton({
     try {
       await action()
       setMessage(success ?? '')
+      if (success) toast.show(success, undo)
     } catch (e) {
       setError(friendlyError(e))
     } finally {
@@ -70,11 +75,7 @@ export function ActionButton({
           children
         )}
       </button>
-      {message && (
-        <p className="success-message" role="status">
-          {message}
-        </p>
-      )}
+      {message && <p className="success-message">{message}</p>}
       {error && (
         <p className="error-message" role="alert">
           {error}
