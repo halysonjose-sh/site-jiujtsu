@@ -10,6 +10,7 @@ test('fluxo demonstrativo de presença, professor, graduação e correção', as
   await expect(page.getByText('Aguardando aprovação')).toBeVisible()
   await page.getByRole('button', { name: 'Aprovar Ana Costa' }).click()
   await expect(page.getByText('Aguardando aprovação')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Alunos' }).first().click()
   await page.getByRole('button', { name: /Lucas Almeida/ }).click()
   await page.getByRole('button', { name: 'Conceder grau', exact: true }).click()
   await page.getByRole('button', { name: 'Confirmar', exact: true }).click()
@@ -54,8 +55,10 @@ test('calendário: professor cria horário, descreve aula, envia foto e lança p
   await page.getByLabel('Nome da aula').fill('Kids')
   await page.getByRole('button', { name: 'Criar horário' }).click()
   await expect(page.getByText('Kids').first()).toBeVisible()
-  // Abre a aula mais recente que já aconteceu (dias com aula têm "aula(s)" no rótulo).
+  // Abre a aula mais recente que já aconteceu (dias com aula têm "aula(s)" no
+  // rótulo). Espera as células com aula existirem antes de capturar os rótulos.
   const cells = page.getByRole('gridcell', { name: /aula\(s\)/ })
+  await cells.first().waitFor()
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })
   const labels = await cells.evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')!))
   const past = labels
@@ -73,7 +76,7 @@ test('calendário: professor cria horário, descreve aula, envia foto e lança p
   await expect(page.getByText('Sobre o treino')).toBeVisible()
   await page.getByLabel('Descrição da aula').fill('Raspagem de gancho')
   await page.getByRole('button', { name: 'Salvar descrição' }).click()
-  await expect(page.getByText('Descrição salva.')).toBeVisible()
+  await expect(page.getByText('Descrição salva.').first()).toBeVisible()
   const png = Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
     'base64',
@@ -88,7 +91,7 @@ test('calendário: professor cria horário, descreve aula, envia foto e lança p
   await semCheckin.locator('input').check()
   await page.getByRole('button', { name: 'Salvar fotos e presenças' }).click()
   await expect(
-    page.getByText(/1 foto\(s\) enviada\(s\) e \d+ presença\(s\) confirmada/),
+    page.getByText(/1 foto\(s\) enviada\(s\) e \d+ presença\(s\) confirmada/).first(),
   ).toBeVisible()
   await expect(page.locator('.photo-large img')).toHaveCount(1)
   await expect(page.locator('.photo-large img')).toHaveCount(1)
@@ -142,7 +145,7 @@ test('cadastro de aula: pelo botão (futura) e por um dia passado (com foto e pr
   await page.getByRole('button', { name: 'Remover foto 2' }).click()
   await expect(page.locator('.photo-previews li')).toHaveCount(1)
   await page.getByRole('button', { name: 'Criar aula e registrar' }).click()
-  await expect(page.getByText('Aula criada, 1 foto(s) enviada(s).')).toBeVisible()
+  await expect(page.getByText('Aula criada, 1 foto(s) enviada(s).').first()).toBeVisible()
   // A foto aparece grande, sem precisar tocar nela.
   await expect(page.locator('.photo-large img')).toHaveCount(1)
   const box = await page.locator('.photo-large img').boundingBox()
@@ -175,7 +178,7 @@ test('cadastro de aula: pelo botão (futura) e por um dia passado (com foto e pr
   await page.locator('.roster label', { hasText: 'Pedro Oliveira' }).locator('input').check()
   await page.getByRole('button', { name: 'Criar aula e registrar' }).click()
   await expect(
-    page.getByText('Aula criada, 1 foto(s) enviada(s), 1 presença(s) confirmada(s).'),
+    page.getByText('Aula criada, 1 foto(s) enviada(s), 1 presença(s) confirmada(s).').first(),
   ).toBeVisible()
   await expect(page.locator('.photo-large img')).toHaveCount(1)
   await expect(page.locator('.roster label', { hasText: 'Pedro Oliveira' })).toContainText(
@@ -189,15 +192,22 @@ test('professor vê, copia e troca o código de acesso; link abre cadastro preen
   page,
   context,
 }) => {
-  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  const clipboardPermitido = await context
+    .grantPermissions(['clipboard-read', 'clipboard-write'])
+    .then(() => true)
+    .catch(() => false)
   await page.goto('/')
   await page.getByRole('button', { name: 'Conhecer a demonstração' }).click()
   await page.getByRole('button', { name: 'Ver como professor' }).click()
-  await page.getByRole('button', { name: 'Configurações' }).first().click()
+  await page.getByRole('button', { name: 'Mais' }).first().click()
   await expect(page.getByLabel('Código da turma')).toHaveText('TIGR-2026')
-  await page.getByRole('button', { name: 'Copiar código' }).click()
-  await expect(page.getByRole('button', { name: 'Copiado!' })).toBeVisible()
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('TIGR-2026')
+  if (clipboardPermitido) {
+    // WebKit no Windows não conhece essas permissões; o resto do teste
+    // (trocar código e link de cadastro) não depende da área de transferência.
+    await page.getByRole('button', { name: 'Copiar código' }).click()
+    await expect(page.getByRole('button', { name: 'Copiado!' })).toBeVisible()
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('TIGR-2026')
+  }
   await page.getByText('Trocar código').click()
   await page.getByRole('button', { name: 'Gerar novo código' }).click()
   await page.getByRole('button', { name: 'Confirmar', exact: true }).click()

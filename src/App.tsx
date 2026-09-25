@@ -8,6 +8,7 @@ import {
   Link2,
   RefreshCw,
   Share2,
+  CalendarCheck,
   CalendarClock,
   CalendarDays,
   Check,
@@ -43,6 +44,8 @@ import {
   type Team,
 } from './lib/api'
 import { Agenda, UpcomingClasses, dayLabel, presenceLabel, timeLabel } from './components/Classes'
+import { Today } from './components/Today'
+import { ToastProvider } from './components/Toast'
 import { zonedToUtc } from './domain/schedule'
 import { compressImage } from './lib/image'
 import {
@@ -255,7 +258,9 @@ function Auth({
       <section className="auth-story">
         <Brand />
         <div className="story-content">
-          <span className="eyebrow">UM TREINO DE CADA VEZ</span>
+          <span className="eyebrow" aria-hidden="true">
+            UM TREINO DE CADA VEZ
+          </span>
           <h1>
             O seu caminho
             <br />
@@ -273,14 +278,18 @@ function Auth({
             <div className="gi-knot" />
           </div>
         </div>
-        <span className="story-footer">PRESENÇA. CONSTÂNCIA. EVOLUÇÃO.</span>
+        <span className="story-footer" aria-hidden="true">
+          PRESENÇA. CONSTÂNCIA. EVOLUÇÃO.
+        </span>
       </section>
       <section className="auth-panel">
         <div className="mobile-brand">
           <Brand />
         </div>
         <div className="auth-form-wrap">
-          <span className="eyebrow">MINHA TURMA</span>
+          <span className="eyebrow" aria-hidden="true">
+            MINHA TURMA
+          </span>
           <h2>
             {recovery
               ? 'Crie sua nova senha'
@@ -419,7 +428,9 @@ function StudentSummary({
     <>
       <section className="rank-card">
         <div className="rank-heading">
-          <span className="eyebrow">{teacher ? 'GRADUAÇÃO ATUAL' : 'SUA GRADUAÇÃO'}</span>
+          <span className="eyebrow" aria-hidden="true">
+            {teacher ? 'GRADUAÇÃO ATUAL' : 'SUA GRADUAÇÃO'}
+          </span>
           <Award size={20} />
         </div>
         <div className="rank-name">
@@ -429,7 +440,7 @@ function StudentSummary({
           </span>
         </div>
         <BeltVisual belt={s.belt} degrees={s.degrees} />
-        <div className="rank-footer">
+        <div className="rank-footer" aria-hidden="true">
           <span>A evolução se constrói a cada treino.</span>
           <span>JIU-JÍTSU</span>
         </div>
@@ -1047,7 +1058,9 @@ export default function App() {
     [recovery, setRecovery] = useState(new URLSearchParams(location.search).has('recovery')),
     [page, setPage] = useState('overview'),
     [selected, setSelected] = useState<string | null>(null),
-    [search, setSearch] = useState('')
+    [search, setSearch] = useState(''),
+    [reviewsToday, setReviewsToday] = useState(0),
+    [jump, setJump] = useState<{ id: string; nonce: number } | null>(null)
   const generation = useRef(0)
   const online = useConnection()
   useEffect(() => {
@@ -1220,11 +1233,13 @@ export default function App() {
     filtered = active.filter((s) =>
       s.name.toLocaleLowerCase('pt-BR').includes(search.toLocaleLowerCase('pt-BR')),
     )
+  const badgeTotal = teacher ? pendingMembers.length + reviewsToday : 0
   const pages = teacher
     ? [
-        { id: 'overview', label: 'Alunos', icon: <Users size={20} /> },
+        { id: 'overview', label: 'Hoje', icon: <CalendarCheck size={20} /> },
+        { id: 'students', label: 'Alunos', icon: <Users size={20} /> },
         { id: 'agenda', label: 'Calendário', icon: <CalendarClock size={20} /> },
-        { id: 'settings', label: 'Configurações', icon: <Settings2 size={20} /> },
+        { id: 'settings', label: 'Mais', icon: <Settings2 size={20} /> },
       ]
     : [
         { id: 'overview', label: 'Meu progresso', icon: <LayoutDashboard size={20} /> },
@@ -1235,7 +1250,14 @@ export default function App() {
     setPage(next)
     setSelected(null)
   }
+  /** Vem da aba Hoje ("Fotos do treino"): abre a aula na Agenda uma vez. */
+  function openSession(id: string) {
+    setJump({ id, nonce: Date.now() })
+    setPage('agenda')
+    setSelected(null)
+  }
   return (
+    <ToastProvider>
     <div className="app-shell">
       {demo && (
         <div className="demo-banner">
@@ -1267,7 +1289,7 @@ export default function App() {
         <div className="sidebar-bottom">
           <Install />
           <div className="profile-mini">
-            <span className="avatar">
+            <span className="avatar" aria-hidden="true">
               {data.profile.name
                 .split(' ')
                 .map((s) => s[0])
@@ -1318,7 +1340,7 @@ export default function App() {
           )}
           <div className="page-heading">
             <div>
-              <span className="eyebrow">
+              <span className="eyebrow" aria-hidden="true">
                 {teacher ? 'ÁREA DO PROFESSOR' : 'SEU JIU-JÍTSU, EM MOVIMENTO'}
               </span>
               <h1>
@@ -1333,7 +1355,7 @@ export default function App() {
                       : page === 'history'
                         ? 'Sua caminhada.'
                         : teacher
-                          ? 'Sua turma.'
+                          ? 'Hoje.'
                           : `Olá, ${data.profile.name.split(' ')[0]}.`}
               </h1>
               <p>
@@ -1348,7 +1370,7 @@ export default function App() {
                       : page === 'history'
                         ? 'Um registro de cada passo no tatame.'
                         : teacher
-                          ? 'Acompanhe a presença e a evolução de cada aluno.'
+                          ? 'Aulas, chamada e pendências do dia.'
                           : 'Continue aparecendo. O resto é consequência.'}
               </p>
             </div>
@@ -1376,59 +1398,21 @@ export default function App() {
               teamId={data.team?.id ?? ''}
               roster={active.map((x) => ({ id: x.id, name: x.name }))}
               onChanged={refresh}
+              jump={jump}
             />
           ) : teacher && !student ? (
-            <>
-              <div className="teacher-overview">
-                <div>
-                  <Users size={21} />
-                  <strong>{active.length}</strong>
-                  <span>alunos na turma</span>
-                </div>
-                <div>
-                  <Check size={21} />
-                  <strong>
-                    {
-                      active.filter((s) =>
-                        s.attendances.some(
-                          (a) => a.date === data.today && a.status === 'confirmada',
-                        ),
-                      ).length
-                    }
-                  </strong>
-                  <span>presentes hoje</span>
-                </div>
-              </div>
-              {pendingMembers.length > 0 && (
-                <section className="student-list">
-                  <div className="section-heading">
-                    <h2>Aguardando aprovação</h2>
-                  </div>
-                  {pendingMembers.map((s) => (
-                    <div className="history-row" key={s.id}>
-                      <div>
-                        <strong>{s.name}</strong>
-                        <span>Cadastrou-se com o código da turma</span>
-                      </div>
-                      <ActionButton
-                        className="primary"
-                        label={`Aprovar ${s.name}`}
-                        action={() => mutate('approve_member', { p_user: s.id, p_approve: true })}
-                      >
-                        <Check size={16} /> Aprovar
-                      </ActionButton>
-                      <ActionButton
-                        className="text-button danger"
-                        label={`Recusar ${s.name}`}
-                        confirm={`Recusar a entrada de ${s.name}? A pessoa não terá acesso à equipe.`}
-                        action={() => mutate('approve_member', { p_user: s.id, p_approve: false })}
-                      >
-                        Recusar
-                      </ActionButton>
-                    </div>
-                  ))}
-                </section>
-              )}
+            page === 'overview' ? (
+              <Today
+                call={call}
+                mutate={mutate}
+                today={data.today}
+                students={data.students}
+                roster={active.map((x) => ({ id: x.id, name: x.name }))}
+                onChanged={refresh}
+                onOpenSession={openSession}
+                onCounts={setReviewsToday}
+              />
+            ) : (
               <section className="student-list">
                 <div className="section-heading">
                   <h2>Alunos</h2>
@@ -1445,7 +1429,7 @@ export default function App() {
                 {filtered.length ? (
                   filtered.map((s) => (
                     <button className="student-row" key={s.id} onClick={() => setSelected(s.id)}>
-                      <span className={'avatar small belt-' + s.belt}>
+                      <span className={'avatar small belt-' + s.belt} aria-hidden="true">
                         {s.name
                           .split(' ')
                           .map((w) => w[0])
@@ -1477,7 +1461,7 @@ export default function App() {
                   </p>
                 )}
               </section>
-            </>
+            )
           ) : student ? (
             <div className="student-layout">
               <div className="student-primary">
@@ -1502,7 +1486,7 @@ export default function App() {
               {teacher && <TeacherActions key={student.id} s={student} mutate={mutate} />}
             </div>
           ) : null}
-          <footer className="workspace-footer">
+          <footer className="workspace-footer" aria-hidden="true">
             <span>Feito para a sua caminhada no tatame.</span>
             <span>TATAME</span>
           </footer>
@@ -1515,10 +1499,16 @@ export default function App() {
         {pages.map((p) => (
           <button key={p.id} className={page === p.id ? 'active' : ''} onClick={() => nav(p.id)}>
             {p.icon}
-            <span>{p.label}</span>
+            <span>
+              {p.label}
+              {p.id === 'overview' && badgeTotal > 0 && (
+                <span className="nav-badge">{badgeTotal}</span>
+              )}
+            </span>
           </button>
         ))}
       </nav>
     </div>
+    </ToastProvider>
   )
 }
