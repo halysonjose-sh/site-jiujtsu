@@ -102,25 +102,34 @@ describe('callChanges', () => {
   })
 })
 describe('callUndo', () => {
-  it('restaura o estado anterior de cada aluno alterado', () => {
+  const base = [
+    { id: 's1', name: 'Ana', status: 'confirmada' as const },
+    { id: 's2', name: 'Bruna', status: 'pendente' as const },
+    { id: 's3', name: 'Carla', status: null },
+    { id: 's4', name: 'Duda', status: 'rejeitada' as const },
+  ]
+  it('devolve null quando algo envolve check-in pendente', () => {
+    // Produção não tem RPC que volte a 'pendente' (review_presence só aceita
+    // 'confirmada' e 'rejeitada'): nem pendente confirmado nem pendente
+    // rejeitado pode ser desfeito.
+    expect(callUndo(base, callChanges(base, new Set(['s1', 's2', 's3', 's4'])), 'aula1')).toBeNull()
+    expect(callUndo(base, callChanges(base, new Set()), 'aula1')).toBeNull()
+  })
+  it('restaura sem registro com remoção e rejeitada com review_presence', () => {
+    // Folha sem pendente: é o único caso restaurável (toda pendente marcada
+    // ou desmarcada torna o undo impossível).
     const initial = [
       { id: 's1', name: 'Ana', status: 'confirmada' as const },
-      { id: 's2', name: 'Bruna', status: 'pendente' as const },
       { id: 's3', name: 'Carla', status: null },
       { id: 's4', name: 'Duda', status: 'rejeitada' as const },
     ]
-    const changes = callChanges(initial, new Set(['s2', 's3', 's4']))
+    const changes = callChanges(initial, new Set(['s3', 's4']))
     expect(callUndo(initial, changes, 'aula1')).toEqual([
-      {
-        rpc: 'review_presence',
-        args: { p_session: 'aula1', p_student: 's2', p_decision: 'pendente' },
-      },
       { rpc: 'teacher_remove_presence', args: { p_session: 'aula1', p_student: 's3' } },
       {
         rpc: 'review_presence',
         args: { p_session: 'aula1', p_student: 's4', p_decision: 'rejeitada' },
       },
-      // s1, confirmada e desmarcada na folha, também entra no Desfazer.
       { rpc: 'teacher_add_presence', args: { p_session: 'aula1', p_student: 's1' } },
     ])
   })

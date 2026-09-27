@@ -29,7 +29,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     const atual = aviso
     if (timer.current) clearTimeout(timer.current)
     setAviso(null)
-    await atual?.undo?.()
+    try {
+      await atual?.undo?.()
+    } catch {
+      // A ação inversa não tem tela própria; o aviso da falha é o próprio toast.
+      show('Não foi possível desfazer.')
+    }
   }
   return (
     <Ctx.Provider value={{ show }}>

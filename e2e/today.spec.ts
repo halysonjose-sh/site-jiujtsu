@@ -8,6 +8,9 @@ const hojeSp = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America
 const AGORA = new Date(`${hojeSp()}T22:30:00Z`)
 
 test('professor faz a chamada em 3 toques, zera o contador e desfaz', async ({ page }) => {
+  // Dois percursos completos num teste só: no webkit, com o projeto chromium
+  // rodando em paralelo, 30s (default) estouram no meio da última espera.
+  test.setTimeout(120_000)
   await page.clock.setFixedTime(AGORA)
   await page.goto('/')
   await page.getByRole('button', { name: 'Conhecer a demonstração' }).click()
@@ -38,12 +41,22 @@ test('professor faz a chamada em 3 toques, zera o contador e desfaz', async ({ p
   // O contador de pendências da aula zera na aba, atrás da folha.
   await expect(page.getByText('1 presença a revisar')).toHaveCount(0)
 
-  // Desfazer: fechar a folha para alcançar o toast.
+  // Recusa de check-in pendente não oferece Desfazer: produção não tem RPC
+  // que volte a 'pendente'. O toast só existe depois de fechar a folha.
   await folha.getByRole('button', { name: 'Fechar' }).click()
   const toast = page.locator('.toast')
   await expect(toast).toContainText('Chamada salva')
+  await expect(toast.getByRole('button', { name: 'Desfazer' })).toHaveCount(0)
+
+  // Segundo fluxo, com Desfazer: confirma quem não tinha registro e volta atrás.
+  await cartao.getByRole('button', { name: 'Fazer chamada' }).click()
+  await folha.getByRole('checkbox', { name: 'Pedro Oliveira' }).check()
+  await folha.getByRole('button', { name: 'Salvar presenças' }).click()
+  await expect(folha.getByText('Chamada salva')).toBeVisible()
+  await expect(cartao).toContainText('2 confirmados · 0 a revisar')
+  await folha.getByRole('button', { name: 'Fechar' }).click()
   await toast.getByRole('button', { name: 'Desfazer' }).click()
-  await expect(page.getByText('1 presença a revisar')).toBeVisible()
+  await expect(cartao).toContainText('1 confirmado · 0 a revisar')
 })
 
 test('bloqueia salvar presenças antes do início da aula', async ({ page }) => {

@@ -5,6 +5,7 @@ import { BottomSheet } from './BottomSheet'
 import { EmptyState } from './EmptyState'
 import { OverflowMenu } from './OverflowMenu'
 import { presenceLabel, timeLabel, useLoad } from './Classes'
+import { useToast } from './Toast'
 import {
   callChanges,
   callRows,
@@ -12,6 +13,7 @@ import {
   reviewCount,
   sessionsOfToday,
   type LinhaChamada,
+  type PassoChamada,
 } from '../domain/today'
 import {
   friendlyError,
@@ -21,7 +23,6 @@ import {
   type StudentView,
 } from '../lib/api'
 
-type Mudancas = ReturnType<typeof callChanges>
 type Mutate = (name: string, args?: Record<string, unknown>) => Promise<void>
 
 /** Professor: aulas de hoje, aprovações pendentes e folha de chamada. */
@@ -55,7 +56,9 @@ export function Today({
   const sessoes = sessionsOfToday(data ?? [], today)
   const [chamada, setChamada] = useState<string | null>(null)
   const [recusando, setRecusando] = useState<StudentView | null>(null)
+  const [erroRecusa, setErroRecusa] = useState<string | null>(null)
   const dialogRecusa = useRef<HTMLDialogElement>(null)
+  const toast = useToast()
   const aula = sessoes.find((s) => s.id === chamada) ?? null
   const revisar = sessoes.filter((s) => (s.pending ?? 0) > 0 && s.status !== 'cancelada')
 
@@ -68,11 +71,23 @@ export function Today({
     if (recusando) dialogRecusa.current?.showModal?.()
   }, [recusando])
 
+  function abrirRecusa(p: StudentView) {
+    setErroRecusa(null)
+    setRecusando(p)
+  }
+
   async function recusar() {
     const alvo = recusando
     if (!alvo) return
+    try {
+      await mutate('approve_member', { p_user: alvo.id, p_approve: false })
+    } catch (e) {
+      // O diálogo fica aberto com o erro, como o ActionButton faz inline.
+      setErroRecusa(friendlyError(e))
+      return
+    }
     setRecusando(null)
-    await mutate('approve_member', { p_user: alvo.id, p_approve: false })
+    toast.show('Recusa registrada')
     await onChanged()
   }
 
@@ -124,7 +139,7 @@ export function Today({
                     Aprovar
                   </ActionButton>
                   <OverflowMenu label={`Ações de ${p.name}`}>
-                    <button type="button" onClick={() => setRecusando(p)}>
+                    <button type="button" onClick={() => abrirRecusa(p)}>
                       Recusar
                     </button>
                   </OverflowMenu>
@@ -197,6 +212,11 @@ export function Today({
         >
           <h2 id="recusar-title">Confirmar alteração</h2>
           <p>Recusar {recusando.name}?</p>
+          {erroRecusa && (
+            <p className="error-message" role="alert">
+              {erroRecusa}
+            </p>
+          )}
           <div className="dialog-actions">
             <button className="secondary" type="button" onClick={() => setRecusando(null)}>
               Cancelar
@@ -240,14 +260,17 @@ function CallSheet({
     inicial.filter((l) => l.status === 'confirmada' || l.status === 'pendente').map((l) => l.id),
   )
   const [marcados, setMarcados] = useState<Set<string> | null>(null)
+  const [salvo, setSalvo] = useState(false)
   const t = agora ?? Date.now()
   const iniciada = new Date(aula.startsAt).getTime() <= t
   const mudancas = callChanges(inicial, marcados ?? iniciais)
   const semMudanca =
     mudancas.confirm.length + mudancas.remove.length + mudancas.reject.length === 0
-  const ultimo = useRef<{ inicial: LinhaChamada[]; mudancas: Mudancas } | null>(null)
+  const ultimo = useRef<{ passos: PassoChamada[] | null } | null>(null)
+  const toast = useToast()
 
   function alternar(id: string) {
+    setSalvo(false)
     setMarcados((prev) => {
       const base = prev ?? iniciais
       const prox = new Set(base)
@@ -259,13 +282,17 @@ function CallSheet({
 
   async function salvar() {
     if (semMudanca) return
-    ultimo.current = { inicial, mudancas }
     if (mudancas.confirm.length)
       await call('confirm_presences', { p_session: aula.id, p_students: mudancas.confirm })
     for (const id of mudancas.remove)
       await call('teacher_remove_presence', { p_session: aula.id, p_student: id })
     for (const id of mudancas.reject)
       await call('review_presence', { p_session: aula.id, p_student: id, p_decision: 'rejeitada' })
+    // Grava só depois de todas as RPCs terem sucesso: falha nunca oferece
+    // Desfazer. callUndo devolve null quando o estado inicial não é
+    // restaurável (check-in pendente não tem RPC que volte).
+    ultimo.current = { passos: callUndo(inicial, mudancas, aula.id) }
+    setSalvo(true)
     await reload()
     await reloadToday()
     await onChanged()
@@ -273,15 +300,22 @@ function CallSheet({
 
   async function desfazer() {
     const u = ultimo.current
-    if (!u) return
-    for (const passo of callUndo(u.inicial, u.mudancas, aula.id)) await call(passo.rpc, passo.args)
+    if (!u?.passos) return
+    for (const passo of u.passos) await call(passo.rpc, passo.args)
     await reload()
     await reloadToday()
     await onChanged()
   }
 
+  function fechar() {
+    // O toast só existe fora da folha (que fica no top layer), então sai no
+    // fechar: os 3 segundos do Desfazer contam a partir daí, não do Salvar.
+    if (salvo) toast.show('Chamada salva', ultimo.current?.passos ? desfazer : undefined)
+    onClose()
+  }
+
   return (
-    <BottomSheet open title="Fazer chamada" onClose={onClose}>
+    <BottomSheet open title="Fazer chamada" onClose={fechar}>
       <div className="call-sheet">
         {error && (
           <p className="error-message" role="alert">
@@ -314,11 +348,10 @@ function CallSheet({
         <button type="button" className="ghost" onClick={() => onOpenSession(aula.id)}>
           <Camera size={18} /> Fotos do treino
         </button>
+        {salvo && <p className="success-message">Chamada salva</p>}
         <ActionButton
           className="primary-dock"
           action={salvar}
-          success="Chamada salva"
-          undo={desfazer}
           disabled={!iniciada || semMudanca}
         >
           Salvar presenças

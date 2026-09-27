@@ -1249,6 +1249,9 @@ export default function App() {
   function nav(next: string) {
     setPage(next)
     setSelected(null)
+    // jump é um salvo one-shot ("Fotos do treino"): sem limpar, toda visita
+    // futura à Agenda reabriria a última aula saltada.
+    setJump(null)
   }
   /** Vem da aba Hoje ("Fotos do treino"): abre a aula na Agenda uma vez. */
   function openSession(id: string) {
@@ -1270,6 +1273,7 @@ export default function App() {
               setDemoRole(demoRole === 'aluno' ? 'professor' : 'aluno')
               setSelected(null)
               setPage('overview')
+              setJump(null)
             }}
           >
             Ver como {demoRole === 'aluno' ? 'professor' : 'aluno'} <ArrowRight size={14} />
@@ -1355,7 +1359,9 @@ export default function App() {
                       : page === 'history'
                         ? 'Sua caminhada.'
                         : teacher
-                          ? 'Hoje.'
+                          ? page === 'students'
+                            ? 'Sua turma.'
+                            : 'Hoje.'
                           : `Olá, ${data.profile.name.split(' ')[0]}.`}
               </h1>
               <p>
@@ -1370,7 +1376,9 @@ export default function App() {
                       : page === 'history'
                         ? 'Um registro de cada passo no tatame.'
                         : teacher
-                          ? 'Aulas, chamada e pendências do dia.'
+                          ? page === 'students'
+                            ? 'Acompanhe a presença e a evolução de cada aluno.'
+                            : 'Aulas, chamada e pendências do dia.'
                           : 'Continue aparecendo. O resto é consequência.'}
               </p>
             </div>

@@ -106,6 +106,15 @@ test('telas do app sem rolagem lateral, alvos >= 44px e fontes >= 13px', async (
   await expect(page.getByText('Aguardando aprovação')).toHaveCount(0)
   await audit(page, 'professor: hoje')
 
+  // Folha da chamada é tela nova: audita aberta (fica no top layer do dialog).
+  await page
+    .locator('.today-card', { hasText: 'Treino avulso' })
+    .getByRole('button', { name: 'Fazer chamada' })
+    .click()
+  await expect(page.locator('.sheet-backdrop dialog')).toBeVisible()
+  await audit(page, 'professor: folha da chamada')
+  await page.getByRole('button', { name: 'Fechar' }).click()
+
   await page.getByRole('button', { name: 'Alunos' }).first().click()
   await expect(page.getByRole('button', { name: /Lucas Almeida/ })).toBeVisible()
   await audit(page, 'professor: lista de alunos')

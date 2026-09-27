@@ -57,3 +57,14 @@ it('Desfazer executa a ação inversa e cancela o timer', () => {
   })
   expect(undo).toHaveBeenCalledTimes(1)
 })
+it('Desfazer que falha mostra o aviso no próprio toast', async () => {
+  const undo = vi.fn().mockRejectedValue(new Error('falhou'))
+  render(
+    <ToastProvider>
+      <Aviso msg="Chamada salva" undo={undo} />
+    </ToastProvider>,
+  )
+  fireEvent.click(screen.getByRole('button', { name: 'Avisar' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Desfazer' }))
+  await screen.findByText('Não foi possível desfazer.')
+})

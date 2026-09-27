@@ -70,20 +70,29 @@ export function callChanges(initial: LinhaChamada[], marked: Set<string>) {
   return { confirm, remove, reject }
 }
 
-/** Inverso de callChanges: passos RPC que restauram o estado inicial. */
+/**
+ * Inverso de callChanges: passos RPC que restauram o estado inicial.
+ * Devolve null quando o estado inicial não é restaurável: produção não tem RPC
+ * que volte a 'pendente' (review_presence só aceita 'confirmada' e 'rejeitada'
+ * — migration 202609250001), então qualquer mudança envolvendo check-in
+ * pendente fica sem Desfazer.
+ */
 export function callUndo(
   initial: LinhaChamada[],
   changes: { confirm: string[]; remove: string[]; reject: string[] },
   sessionId: string,
-): PassoChamada[] {
+): PassoChamada[] | null {
+  if (changes.reject.length) return null
   const antes = new Map(initial.map((a) => [a.id, a.status]))
   const passos: PassoChamada[] = []
   for (const id of changes.confirm) {
     const status = antes.get(id) ?? null
+    if (status === 'pendente') return null
     passos.push(
       status === null
         ? { rpc: 'teacher_remove_presence', args: { p_session: sessionId, p_student: id } }
         : {
+            // 'rejeitada' é decisão válida de review_presence.
             rpc: 'review_presence',
             args: { p_session: sessionId, p_student: id, p_decision: status },
           },
@@ -91,12 +100,6 @@ export function callUndo(
   }
   for (const id of changes.remove) {
     passos.push({ rpc: 'teacher_add_presence', args: { p_session: sessionId, p_student: id } })
-  }
-  for (const id of changes.reject) {
-    passos.push({
-      rpc: 'review_presence',
-      args: { p_session: sessionId, p_student: id, p_decision: 'pendente' },
-    })
   }
   return passos
 }

@@ -67,13 +67,16 @@ const detalhe = {
   ],
 }
 
-function setup(sessoes: SessionView[], opts?: { detail?: unknown; alunos?: StudentView[] }) {
+function setup(
+  sessoes: SessionView[],
+  opts?: { detail?: unknown; alunos?: StudentView[]; mutate?: () => Promise<void> },
+) {
   const call = vi.fn(async (name: string, args?: Record<string, unknown>) => {
     if (name === 'list_sessions') return sessoes
     if (name === 'session_detail') return opts?.detail ?? detalhe
     return null
   })
-  const mutate = vi.fn(async () => undefined)
+  const mutate = opts?.mutate ?? vi.fn(async () => undefined)
   const onChanged = vi.fn(async () => undefined)
   const onOpenSession = vi.fn()
   render(
@@ -169,31 +172,62 @@ describe('Today', () => {
     expect(
       call.mock.calls.some(([nome]) => nome === 'confirm_presences'),
     ).toBe(false)
-    // Mensagem inline + toast: o texto aparece duas vezes.
-    expect(screen.getAllByText('Chamada salva').length).toBeGreaterThan(0)
-    expect(screen.getByRole('button', { name: 'Desfazer' })).toBeTruthy()
+    // Mensagem inline na folha; o toast só sai quando ela fecha.
+    expect(screen.getByText('Chamada salva')).toBeTruthy()
     await waitFor(() => expect(onChanged).toHaveBeenCalled())
+    // Recusa envolve check-in pendente: produção não tem RPC que volte a
+    // 'pendente', então o toast pós-fechar não oferece Desfazer.
+    fireEvent.click(screen.getByRole('button', { name: 'Fechar' }))
+    await screen.findByText('Chamada salva')
+    expect(screen.queryByRole('button', { name: 'Desfazer' })).toBeNull()
   })
 
   it('Desfazer restaura o aluno que não tinha registro', async () => {
-    const { call } = setup([sessao({ id: 'aula1', startsAt: INICIADA })])
+    // Sem check-in pendente no detalhe: só esse estado é restaurável.
+    const { call } = setup([sessao({ id: 'aula1', startsAt: INICIADA })], {
+      detail: {
+        ...detalhe,
+        students: [
+          { id: 'lucas', name: 'Lucas Almeida', status: 'confirmada' as const, source: 'checkin' },
+          { id: 'pedro', name: 'Pedro Oliveira', status: null, source: null },
+        ],
+      },
+    })
     fireEvent.click(await screen.findByRole('button', { name: 'Fazer chamada' }))
     await screen.findByRole('dialog')
     fireEvent.click(await screen.findByRole('checkbox', { name: 'Pedro Oliveira' }))
     fireEvent.click(screen.getByRole('button', { name: 'Salvar presenças' }))
-    await screen.findAllByText('Chamada salva')
-    // Marina continua marcada e era pendente: salvar a confirma junto com Pedro.
+    await screen.findByText('Chamada salva')
     expect(call).toHaveBeenCalledWith('confirm_presences', {
       p_session: 'aula1',
-      p_students: ['marina', 'pedro'],
+      p_students: ['pedro'],
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Desfazer' }))
+    // O toast com Desfazer só existe fora do top layer da folha: fecha primeiro.
+    fireEvent.click(screen.getByRole('button', { name: 'Fechar' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Desfazer' }))
     await waitFor(() =>
       expect(call).toHaveBeenCalledWith('teacher_remove_presence', {
         p_session: 'aula1',
         p_student: 'pedro',
       }),
     )
+  })
+
+  it('recusar com falha mantém o diálogo aberto e mostra o erro', async () => {
+    const { mutate } = setup([sessao({ id: 'aula1', startsAt: INICIADA })], {
+      mutate: vi.fn(async () => {
+        throw new Error('Sem conexão.')
+      }),
+    })
+    await screen.findByText('Aguardando aprovação')
+    fireEvent.click(screen.getByRole('button', { name: 'Ações de Ana Costa' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Recusar' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar' }))
+    await waitFor(() =>
+      expect(mutate).toHaveBeenCalledWith('approve_member', { p_user: 'ana', p_approve: false }),
+    )
+    await screen.findByRole('alert')
+    expect(screen.getByRole('button', { name: 'Confirmar' })).toBeTruthy()
   })
 
   it('desabilita salvar antes do início e mostra a dica', async () => {
