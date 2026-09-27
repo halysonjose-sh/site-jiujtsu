@@ -59,7 +59,7 @@ export const presenceLabel: Record<PresenceStatus, string> = {
   rejeitada: 'Presença recusada',
 }
 
-function useLoad<T>(load: () => Promise<T>, deps: unknown[]) {
+export function useLoad<T>(load: () => Promise<T>, deps: unknown[]) {
   const [data, setData] = useState<T | null>(null),
     [error, setError] = useState('')
   const reload = useCallback(async () => {
@@ -183,6 +183,7 @@ export function Agenda({
   teamId,
   roster,
   onChanged,
+  jump,
 }: {
   call: Call
   today: string
@@ -191,6 +192,8 @@ export function Agenda({
   teamId: string
   roster: { id: string; name: string }[]
   onChanged: () => Promise<void>
+  /** Vem da aba Hoje ("Fotos do treino"): abre a aula uma vez, por nonce. */
+  jump?: { id: string; nonce: number } | null
 }) {
   const [month, setMonth] = useState(today.slice(0, 7)),
     [day, setDay] = useState(today),
@@ -216,6 +219,10 @@ export function Agenda({
       .then((u) => setCovers((c) => ({ ...c, ...u })))
       .catch(() => {})
   }, [dayCovers, photos])
+  useEffect(() => {
+    if (jump) setSelected(jump.id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jump?.nonce])
   if (creating)
     return (
       <NewSessionForm

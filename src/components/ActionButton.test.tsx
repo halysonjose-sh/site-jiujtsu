@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { it, expect, vi } from 'vitest'
 import { ActionButton } from './ActionButton'
+import { ToastProvider } from './Toast'
 it('impede envios repetidos e só confirma após resposta', async () => {
   let finish!: () => void
   const action = vi.fn(
@@ -61,4 +62,32 @@ it('bloqueia ações offline', () => {
     </ActionButton>,
   )
   expect(screen.getByRole('button')).toBeDisabled()
+})
+it('emite toast com Desfazer quando há provedor', async () => {
+  const undo = vi.fn().mockResolvedValue(undefined)
+  render(
+    <ToastProvider>
+      <ActionButton action={vi.fn()} success="Chamada salva" undo={undo}>
+        Salvar
+      </ActionButton>
+    </ToastProvider>,
+  )
+  fireEvent.click(screen.getByRole('button'))
+  await waitFor(() => expect(screen.getAllByText('Chamada salva')).toHaveLength(2))
+  const live = document.querySelector('.toast')
+  expect(live?.getAttribute('aria-live')).toBe('polite')
+  fireEvent.click(screen.getByRole('button', { name: 'Desfazer' }))
+  expect(undo).toHaveBeenCalledTimes(1)
+})
+it('sem provedor mantém a mensagem inline e não oferece Desfazer', async () => {
+  const undo = vi.fn().mockResolvedValue(undefined)
+  render(
+    <ActionButton action={vi.fn()} success="Presença registrada" undo={undo}>
+      Registrar
+    </ActionButton>,
+  )
+  fireEvent.click(screen.getByRole('button'))
+  await screen.findByText('Presença registrada')
+  expect(screen.queryByRole('button', { name: 'Desfazer' })).toBeNull()
+  expect(undo).not.toHaveBeenCalled()
 })

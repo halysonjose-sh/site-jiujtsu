@@ -177,6 +177,44 @@ export function createDemo() {
       source: 'checkin',
     })
 
+  // Aulas avulsas de hoje: uma iniciada às 18:30 (com check-ins) e uma prevista
+  // às 20:30. Fixas para a aba Hoje e o e2e serem determinísticos em qualquer dia.
+  const avulsas = withIds([
+    {
+      teamId: TEAM,
+      scheduleId: null,
+      title: 'Treino avulso',
+      startsAt: zonedToUtc(today, '18:30'),
+      durationMin: 90,
+      status: 'prevista' as const,
+    },
+    {
+      teamId: TEAM,
+      scheduleId: null,
+      title: 'Treino de competição',
+      startsAt: zonedToUtc(today, '20:30'),
+      durationMin: 90,
+      status: 'prevista' as const,
+    },
+  ])
+  sessions = [...sessions, ...avulsas].sort((a, b) => a.startsAt.localeCompare(b.startsAt))
+  presences.push(
+    {
+      sessionId: avulsas[0].id!,
+      studentId: 'lucas',
+      date: today,
+      status: 'confirmada',
+      source: 'checkin',
+    },
+    {
+      sessionId: avulsas[0].id!,
+      studentId: 'marina',
+      date: today,
+      status: 'pendente',
+      source: 'checkin',
+    },
+  )
+
   const session = (id: unknown) => {
     const s = sessions.find((x) => x.id === id)
     if (!s) throw new Error('Aula não encontrada.')
