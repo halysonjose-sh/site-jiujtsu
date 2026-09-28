@@ -56,7 +56,7 @@ import { ToastProvider, useToast } from './components/Toast'
 import { BottomSheet } from './components/BottomSheet'
 import { OverflowMenu } from './components/OverflowMenu'
 import { zonedToUtc } from './domain/schedule'
-import { falhasDeContraste } from './domain/contrast'
+import { escalaSidebar, falhasDeContraste } from './domain/contrast'
 import { compressImage } from './lib/image'
 import {
   currentSubscription,
@@ -68,6 +68,35 @@ import {
 import { createDemo } from './lib/demo'
 import { useConnection } from './lib/useConnection'
 import { frequencyRate, streak } from './domain/frequency'
+
+/** Aplica o visual da equipe no :root: cores principais e escala legível da sidebar. */
+function aplicarVisual(root: CSSStyleDeclaration, primary: string, accent: string) {
+  root.setProperty('--green', primary)
+  root.setProperty('--accent', accent)
+  const esc = escalaSidebar(accent)
+  if (esc) {
+    root.setProperty('--side-text', esc.texto)
+    root.setProperty('--side-weak', esc.fraco)
+    root.setProperty('--side-hover-bg', esc.hoverBg)
+    root.setProperty('--side-active-bg', esc.ativoBg)
+    root.setProperty('--side-active-text', esc.ativoTexto)
+  } else {
+    limparVisual(root)
+  }
+}
+/** Volta ao visual padrão do Tatame (sem equipe carregada ou cor inválida). */
+function limparVisual(root: CSSStyleDeclaration) {
+  for (const t of [
+    '--green',
+    '--accent',
+    '--side-text',
+    '--side-weak',
+    '--side-hover-bg',
+    '--side-active-bg',
+    '--side-active-text',
+  ])
+    root.removeProperty(t)
+}
 
 const dateLabel = (day: string) =>
   new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', timeZone: 'UTC' }).format(
@@ -1218,6 +1247,18 @@ function Settings({
     [primary, setPrimary] = useState(team?.primaryColor ?? '#234c3a'),
     [accent, setAccent] = useState(team?.accentColor ?? '#cee68b'),
     [logoError, setLogoError] = useState('')
+  // Pré-visualização ao vivo: o app inteiro reage enquanto o dono escolhe a cor.
+  const preview = (p: string, a: string) => aplicarVisual(document.documentElement.style, p, a)
+  useEffect(() => {
+    const root = document.documentElement.style
+    return () => {
+      // Desmontagem sem salvar: restaura o visual que estava salvo.
+      if (team) aplicarVisual(root, team.primaryColor, team.accentColor)
+      else limparVisual(root)
+    }
+    // Executa só na desmontagem; team aqui é o visual salvo no momento da abertura.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const valid =
     value === '' ||
     (Number.isInteger(Number(value)) && Number(value) > 0 && Number(value) <= 2147483647)
@@ -1262,10 +1303,24 @@ function Settings({
             </Field>
             <div className="form-grid">
               <Field label="Cor principal">
-                <input type="color" value={primary} onChange={(e) => setPrimary(e.target.value)} />
+                <input
+                  type="color"
+                  value={primary}
+                  onChange={(e) => {
+                    setPrimary(e.target.value)
+                    preview(e.target.value, accent)
+                  }}
+                />
               </Field>
               <Field label="Cor de destaque">
-                <input type="color" value={accent} onChange={(e) => setAccent(e.target.value)} />
+                <input
+                  type="color"
+                  value={accent}
+                  onChange={(e) => {
+                    setAccent(e.target.value)
+                    preview(primary, e.target.value)
+                  }}
+                />
               </Field>
             </div>
             {(() => {
@@ -1439,14 +1494,12 @@ export default function App() {
   useEffect(() => {
     const root = document.documentElement.style
     if (team) {
-      root.setProperty('--green', team.primaryColor)
-      root.setProperty('--accent', team.accentColor)
+      aplicarVisual(root, team.primaryColor, team.accentColor)
       // Barra do navegador e título da aba acompanham o visual da equipe.
       document.querySelector('meta[name="theme-color"]')?.setAttribute('content', team.primaryColor)
       document.title = `${team.name} · Tatame`
     } else {
-      root.removeProperty('--green')
-      root.removeProperty('--accent')
+      limparVisual(root)
       document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#234c3a')
       document.title = 'Tatame · Minha equipe'
     }

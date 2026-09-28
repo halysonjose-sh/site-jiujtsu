@@ -513,7 +513,7 @@ dialog p {
 .sidebar-label {
   font-size: 10px;
   letter-spacing: 0.16em;
-  color: #565f57;
+  color: var(--side-weak, #565f57);
   font-weight: 700;
   margin: 0 14px 17px;
 }
@@ -527,17 +527,17 @@ dialog p {
   justify-content: flex-start;
   background: transparent;
   border-radius: 8px;
-  color: #4a544c;
+  color: var(--side-text, #4a544c);
   font-size: 14px;
   gap: 13px;
 }
 .sidebar nav button.active {
-  background: color-mix(in srgb, var(--green) 9%, #fff);
-  color: #345332;
+  background: var(--side-active-bg, color-mix(in srgb, var(--green) 9%, #fff));
+  color: var(--side-active-text, #345332);
   font-weight: 650;
 }
 .sidebar nav button:hover {
-  background: color-mix(in srgb, var(--green) 9%, #fff);
+  background: var(--side-hover-bg, color-mix(in srgb, var(--green) 9%, #fff));
 }
 .sidebar-bottom {
   margin-top: auto;
