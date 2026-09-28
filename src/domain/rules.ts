@@ -5,11 +5,12 @@ export type Graduation = {
   date: string
   belt: Belt
   degrees: number
+  note?: string | null
   cancelled?: boolean
 }
 export type Student = {
   id: string
-  initial: { belt: Belt; degrees: number } | null
+  initial: { belt: Belt; degrees: number; note?: string | null } | null
   attendances: string[]
   events: Graduation[]
 }
@@ -69,6 +70,7 @@ export function graduate(
   kind: 'grau' | 'faixa',
   date: string,
   key: string,
+  note?: string | null,
 ): Student {
   requireTeacher(actor)
   if (s.events.some((e) => e.id === key)) return s
@@ -82,7 +84,8 @@ export function graduate(
     belt = belts[belts.indexOf(belt) + 1]
     degrees = 0
   }
-  return { ...s, events: [...s.events, { id: key, date, belt, degrees }] }
+  const limpa = note?.trim() || null
+  return { ...s, events: [...s.events, { id: key, date, belt, degrees, note: limpa }] }
 }
 export function undoLast(s: Student, actor: Actor): Student {
   requireTeacher(actor)
@@ -90,7 +93,13 @@ export function undoLast(s: Student, actor: Actor): Student {
   if (!last) throw new Error('Não há graduação para desfazer.')
   return { ...s, events: s.events.map((e) => (e.id === last.id ? { ...e, cancelled: true } : e)) }
 }
-export function setInitial(s: Student, actor: Actor, belt: Belt, degrees: number): Student {
+export function setInitial(
+  s: Student,
+  actor: Actor,
+  belt: Belt,
+  degrees: number,
+  note?: string | null,
+): Student {
   requireTeacher(actor)
   if (s.initial || s.events.length)
     throw new Error('A situação inicial já foi definida ou existe uma graduação.')
@@ -101,5 +110,5 @@ export function setInitial(s: Student, actor: Actor, belt: Belt, degrees: number
     (belt === 'preta' && degrees !== 0)
   )
     throw new Error('Graus inválidos para esta faixa.')
-  return { ...s, initial: { belt, degrees } }
+  return { ...s, initial: { belt, degrees, note: note?.trim() || null } }
 }

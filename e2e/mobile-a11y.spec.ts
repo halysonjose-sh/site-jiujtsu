@@ -87,15 +87,15 @@ test('telas do app sem rolagem lateral, alvos >= 44px e fontes >= 13px', async (
   await page.goto('/')
   await page.getByRole('button', { name: 'Conhecer a demonstração' }).click()
   await expect(page.getByText('Modo demonstração')).toBeVisible()
-  await audit(page, 'aluno: meu progresso')
+  await audit(page, 'aluno: treinar')
   await page.getByRole('button', { name: 'Vou treinar' }).first().click()
   await expect(page.getByRole('button', { name: 'Desistir' }).first()).toBeVisible()
-  await audit(page, 'aluno: meu progresso com check-in')
+  await audit(page, 'aluno: treinar com check-in')
   await page.getByRole('button', { name: 'Treinos' }).first().click()
   await expect(page.getByRole('grid')).toBeVisible()
   await audit(page, 'aluno: treinos')
-  await page.getByRole('button', { name: 'Histórico' }).first().click()
-  await audit(page, 'aluno: histórico')
+  await page.getByRole('button', { name: 'Eu' }).first().click()
+  await audit(page, 'aluno: eu')
 
   // Demonstração como professor: a aba padrão agora é Hoje, onde ficam as
   // pendências (aprovações e presenças a revisar).
@@ -120,6 +120,20 @@ test('telas do app sem rolagem lateral, alvos >= 44px e fontes >= 13px', async (
   await audit(page, 'professor: lista de alunos')
   await page.getByRole('button', { name: /Lucas Almeida/ }).click()
   await audit(page, 'professor: detalhe do aluno')
+  // Folha de graduar é tela nova (top layer); graduar cria o evento que o
+  // menu "Mais ações" precisa para oferecer "Desfazer última graduação".
+  await page.getByRole('button', { name: 'Graduar', exact: true }).click()
+  await expect(page.locator('.sheet-backdrop dialog')).toBeVisible()
+  await audit(page, 'professor: folha graduar')
+  await page.getByRole('button', { name: '+1 grau' }).click()
+  await expect(page.getByText('Grau concedido').first()).toBeVisible()
+  await page.getByRole('button', { name: 'Mais ações' }).click()
+  await page.getByRole('button', { name: 'Desfazer última graduação' }).click()
+  await expect(page.getByRole('dialog', { name: 'Confirmar alteração' })).toBeVisible()
+  await audit(page, 'professor: diálogo de confirmação')
+  await page.getByRole('button', { name: 'Cancelar' }).click()
+  // data-stay mantém o menu aberto sob o diálogo; fechar a folha para voltar.
+  await page.getByRole('button', { name: 'Fechar' }).click()
   await page.getByRole('button', { name: 'Todos os alunos' }).click()
 
   await page.getByRole('button', { name: 'Calendário' }).first().click()
@@ -147,18 +161,44 @@ test('telas do app sem rolagem lateral, alvos >= 44px e fontes >= 13px', async (
     .click()
   await expect(page.getByText('Sobre o treino')).toBeVisible()
   await audit(page, 'professor: painel do treino')
+  // Zoom de foto, quando o treino exibido tem fotos.
+  if (await page.locator('.photo-large img').count()) {
+    await page.locator('.photo-large img').first().click()
+    await expect(page.getByRole('dialog', { name: 'Foto ampliada' })).toBeVisible()
+    await audit(page, 'professor: zoom de foto')
+    await page.getByRole('button', { name: 'Fechar' }).click()
+  }
   await page.getByRole('button', { name: /Voltar para o calendário/ }).click()
 
   await page.getByRole('button', { name: 'Nova aula', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Nova aula' })).toBeVisible()
+  await audit(page, 'professor: folha nova aula')
+  await page.getByRole('button', { name: /Mais opções/ }).click()
+  await expect(page.getByRole('heading', { name: 'Nova aula' })).toBeVisible()
   await audit(page, 'professor: formulário nova aula')
   await page.getByRole('button', { name: /Voltar para o calendário/ }).click()
 
+  // Horários padrão agora moram na aba Mais.
+  await page.getByRole('button', { name: 'Mais' }).first().click()
+  await expect(page.getByLabel('Código da equipe')).toBeVisible()
+  await page.getByRole('button', { name: 'Novo horário' }).click()
+  await page.getByRole('button', { name: 'Criar horário' }).waitFor()
+  await audit(page, 'professor: formulário novo horário')
+  await page.getByRole('button', { name: 'Fechar' }).click()
+
+  await expect(page.getByLabel('Código da equipe')).toBeVisible()
+  await audit(page, 'professor: configurações')
   await page.getByRole('button', { name: 'Novo horário' }).click()
   await expect(page.getByRole('button', { name: 'Criar horário' })).toBeVisible()
   await audit(page, 'professor: formulário novo horário')
+})
 
-  await page.getByRole('button', { name: 'Mais' }).first().click()
-  await expect(page.getByLabel('Código da turma')).toBeVisible()
-  await audit(page, 'professor: configurações')
+test('tela offline sem rolagem lateral, alvos >= 44px e fontes >= 13px', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByRole('button', { name: 'Conhecer a demonstração' })).toBeVisible()
+  // Sem recarregar: o app reage ao evento offline e troca a tela inteira.
+  await page.context().setOffline(true)
+  await expect(page.getByText('Você está sem conexão')).toBeVisible()
+  await audit(page, 'offline')
+  await page.context().setOffline(false)
 })

@@ -110,7 +110,7 @@ describe('graduação e ciclo', () => {
   })
   it('situação inicial uma vez e antes da primeira graduação', () => {
     const s = setInitial(student(), teacher, 'roxa', 3)
-    expect(s.initial).toEqual({ belt: 'roxa', degrees: 3 })
+    expect(s.initial).toEqual({ belt: 'roxa', degrees: 3, note: null })
     expect(s.events).toHaveLength(0)
     expect(counts(s).total).toBe(0)
     expect(() => setInitial(s, teacher, 'azul', 0)).toThrow()

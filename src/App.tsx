@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Award,
+  Camera,
   Copy,
   Link2,
   RefreshCw,
@@ -14,13 +15,14 @@ import {
   Check,
   ChevronRight,
   GraduationCap,
-  LayoutDashboard,
   LogOut,
   Plus,
   Search,
   Settings2,
   ShieldCheck,
   Trash2,
+  TrendingUp,
+  User,
   Users,
   WifiOff,
   X,
@@ -38,15 +40,23 @@ import {
   supabasePhotos,
   rpc,
   supabase,
+  avatarUrls as supabaseAvatarUrls,
+  uploadAvatar as supabaseUploadAvatar,
+  removeAvatar,
+  avatarPath as buildAvatarPath,
   type Call,
   type Dashboard,
   type StudentView,
   type Team,
 } from './lib/api'
-import { Agenda, UpcomingClasses, dayLabel, presenceLabel, timeLabel } from './components/Classes'
+import { Agenda, dayLabel, presenceLabel, Schedules, timeLabel } from './components/Classes'
+import { TrainTab } from './components/StudentTrain'
 import { Today } from './components/Today'
-import { ToastProvider } from './components/Toast'
+import { ToastProvider, useToast } from './components/Toast'
+import { BottomSheet } from './components/BottomSheet'
+import { OverflowMenu } from './components/OverflowMenu'
 import { zonedToUtc } from './domain/schedule'
+import { falhasDeContraste } from './domain/contrast'
 import { compressImage } from './lib/image'
 import {
   currentSubscription,
@@ -57,6 +67,7 @@ import {
 } from './lib/push'
 import { createDemo } from './lib/demo'
 import { useConnection } from './lib/useConnection'
+import { frequencyRate, streak } from './domain/frequency'
 
 const dateLabel = (day: string) =>
   new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', timeZone: 'UTC' }).format(
@@ -119,7 +130,11 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 }
 function BeltVisual({ belt, degrees }: { belt: Belt; degrees: number }) {
   return (
-    <div className={'belt-visual belt-' + belt} aria-label={`Faixa ${belt}, ${degrees} graus`}>
+    <div
+      className={'belt-visual belt-' + belt}
+      role="img"
+      aria-label={`Faixa ${belt}, ${degrees} graus`}
+    >
       <span className="belt-stitch" />
       <span className="belt-tip">
         {Array.from({ length: degrees }, (_, i) => (
@@ -127,6 +142,60 @@ function BeltVisual({ belt, degrees }: { belt: Belt; degrees: number }) {
         ))}
       </span>
     </div>
+  )
+}
+const initials = (name: string) =>
+  name
+    .split(' ')
+    .map((w) => w[0])
+    .slice(0, 2)
+    .join('')
+const avatarUrlCache = new Map<string, string>()
+/** Foto do aluno; sem foto (ou antes de carregar a URL), iniciais sobre a faixa. */
+function StudentAvatar({
+  path,
+  name,
+  belt,
+  resolve,
+  className = 'avatar small',
+}: {
+  path: string | null
+  name: string
+  belt: Belt
+  resolve: (paths: string[]) => Promise<Record<string, string>>
+  className?: string
+}) {
+  const [url, setUrl] = useState(() => (path ? avatarUrlCache.get(path) : undefined))
+  useEffect(() => {
+    if (!path) {
+      setUrl(undefined)
+      return
+    }
+    const cached = avatarUrlCache.get(path)
+    if (cached) {
+      setUrl(cached)
+      return
+    }
+    let vivo = true
+    resolve([path])
+      .then((r) => {
+        const u = r[path]
+        if (u && vivo) {
+          avatarUrlCache.set(path, u)
+          setUrl(u)
+        }
+      })
+      .catch(() => {})
+    return () => {
+      vivo = false
+    }
+  }, [path, resolve])
+  if (url)
+    return <img className={className + ' photo'} src={url} alt="" aria-hidden="true" />
+  return (
+    <span className={className + ' belt-' + belt} aria-hidden="true">
+      {initials(name)}
+    </span>
   )
 }
 function Install() {
@@ -200,7 +269,7 @@ function Auth({
       return
     }
     if (!supabase) {
-      setError('A turma ainda não foi conectada. Enquanto isso, conheça a demonstração abaixo.')
+      setError('A equipe ainda não foi conectada. Enquanto isso, conheça a demonstração abaixo.')
       return
     }
     lock.current = true
@@ -331,7 +400,7 @@ function Auth({
               </Field>
             )}
             {!recovery && mode === 'signup' && (
-              <Field label="Código da turma">
+              <Field label="Código da equipe">
                 <input
                   name="code"
                   minLength={8}
@@ -393,7 +462,7 @@ function Auth({
           {!supabase && (
             <div className="setup-note">
               <ShieldCheck size={19} />
-              <span>A turma está em preparação. O acesso real será liberado após a conexão.</span>
+              <span>A equipe está em preparação. O acesso real será liberado após a conexão.</span>
             </div>
           )}
           {!recovery && (
@@ -408,24 +477,126 @@ function Auth({
   )
 }
 type Mutate = (name: string, args?: Record<string, unknown>) => Promise<void>
+type AvatarUpload = (path: string, file: Blob) => Promise<void>
 function StudentSummary({
   student: s,
   goal,
   teacher,
   call,
+  mutate,
+  resolveAvatars,
+  uploadAvatarFile,
+  teamId,
   onChanged,
-  onCheckin,
 }: {
   student: StudentView
   goal: number | null
   teacher: boolean
-  call: Call
-  onChanged: () => Promise<void>
-  onCheckin?: (session: string) => void
+  call?: Call
+  mutate?: Mutate
+  resolveAvatars?: (paths: string[]) => Promise<Record<string, string>>
+  uploadAvatarFile?: AvatarUpload
+  teamId?: string
+  onChanged?: () => void
 }) {
   const p = progress(s.cycle, goal)
+  const freq = frequencyRate(s.total, s.held)
+  const seq = streak(
+    s.attendances.filter((a) => a.status === 'confirmada').map((a) => a.date),
+    s.today,
+  )
+  const toast = useToast()
+  const [edit, setEdit] = useState(false),
+    [contact, setContact] = useState(s.contact ?? ''),
+    [birth, setBirth] = useState(s.birthDate ?? ''),
+    [foto, setFoto] = useState<File | null>(null)
+  const podeEditar = !teacher && !!call && !!mutate && !!uploadAvatarFile && !!teamId
+  const escolherFoto = async (file: File | null) => {
+    if (!file || !uploadAvatarFile || !teamId) return
+    try {
+      const blob = await compressImage(file)
+      const path = buildAvatarPath(teamId, s.id, blob)
+      await uploadAvatarFile(path, blob)
+      const old = await call!<string>('set_avatar', { p_path: path })
+      await removeAvatar(old)
+      avatarUrlCache.delete(path)
+      onChanged?.()
+      toast.show('Foto atualizada.')
+    } catch (e) {
+      toast.show(friendlyError(e))
+    }
+  }
   return (
     <>
+      <section className="profile-card">
+        <StudentAvatar
+          path={s.avatarPath}
+          name={s.name}
+          belt={s.belt}
+          resolve={resolveAvatars ?? (async () => ({}))}
+          className="avatar"
+        />
+        <div className="profile-meta">
+          <h2>{s.name}</h2>
+          <span>Na equipe desde {dateLabel(s.joinedAt.slice(0, 10))} de {s.joinedAt.slice(0, 4)}</span>
+          {teacher && s.contact && <span>Contato: {s.contact}</span>}
+          {teacher && s.birthDate && <span>Nascimento: {dateLabel(s.birthDate)}</span>}
+          {s.memberStatus === 'inativo' && <span className="status-pill">Inativo</span>}
+        </div>
+        {podeEditar && (
+          <button className="secondary edit-profile" type="button" onClick={() => setEdit(true)}>
+            <Camera size={16} /> Editar perfil
+          </button>
+        )}
+      </section>
+      {podeEditar && (
+        <BottomSheet open={edit} title="Editar perfil" onClose={() => setEdit(false)}>
+          <div className="menu-list profile-edit">
+            <Field label="Foto">
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                aria-label="Escolher foto do perfil"
+                onChange={(e) => {
+                  const f = e.target.files?.[0] ?? null
+                  setFoto(f)
+                  if (f) escolherFoto(f)
+                }}
+              />
+            </Field>
+            {foto && <p className="field-help">A foto é enviada assim que escolhida.</p>}
+            <Field label="Contato (telefone ou e-mail)">
+              <input
+                value={contact}
+                maxLength={120}
+                onChange={(e) => setContact(e.target.value)}
+              />
+            </Field>
+            <Field label="Nascimento">
+              <input
+                type="date"
+                value={birth}
+                max={s.today}
+                onChange={(e) => setBirth(e.target.value)}
+              />
+            </Field>
+            <ActionButton
+              className="primary"
+              action={async () => {
+                await mutate!('update_my_profile', {
+                  p_contact: contact,
+                  p_birth_date: birth || null,
+                })
+                setEdit(false)
+                onChanged?.()
+              }}
+              success="Perfil atualizado."
+            >
+              Salvar perfil
+            </ActionButton>
+          </div>
+        </BottomSheet>
+      )}
       <section className="rank-card">
         <div className="rank-heading">
           <span className="eyebrow" aria-hidden="true">
@@ -460,10 +631,18 @@ function StudentSummary({
           <strong data-testid="cycle-count">{s.cycle}</strong>
           <span className="muted">Desde a última graduação</span>
         </section>
+        <section className="stat-card">
+          <span className="stat-label">
+            <TrendingUp size={18} /> Frequência
+          </span>
+          <strong data-testid="frequency-rate">{freq === null ? '—' : freq + '%'}</strong>
+          <span className="muted">
+            {seq > 0
+              ? `Sequência: ${seq} ${seq === 1 ? 'treino' : 'treinos'}`
+              : 'Desde sua entrada na equipe'}
+          </span>
+        </section>
       </div>
-      {!teacher && (
-        <UpcomingClasses call={call} today={s.today} onChanged={onChanged} onCheckin={onCheckin} />
-      )}
       {p && (
         <section className="goal-card">
           <div className="section-heading">
@@ -498,16 +677,32 @@ function History({
   teacher,
   mutate,
   call,
+  collapsed = false,
 }: {
   s: StudentView
   teacher: boolean
   mutate: Mutate
   call: Call
+  /** Visão do professor: histórico vem recolhido para o Graduar dominar a tela. */
+  collapsed?: boolean
 }) {
   const [tab, setTab] = useState<'presencas' | 'graduacoes'>('presencas'),
     [limit, setLimit] = useState(12),
     [correction, setCorrection] = useState(s.today),
-    [correctionTime, setCorrectionTime] = useState('19:00')
+    [correctionTime, setCorrectionTime] = useState('19:00'),
+    [aberto, setAberto] = useState(!collapsed)
+  if (!aberto)
+    return (
+      <section className="history-card collapsed">
+        <div className="section-heading">
+          <h3>{teacher ? 'Histórico do aluno' : 'Seu histórico'}</h3>
+          <span className="muted">{s.total} aulas</span>
+        </div>
+        <button className="secondary" type="button" onClick={() => setAberto(true)}>
+          Ver histórico
+        </button>
+      </section>
+    )
   return (
     <section className="history-card">
       <div className="section-heading">
@@ -636,6 +831,7 @@ function History({
                 Faixa {e.belt} · {e.degrees} {e.degrees === 1 ? 'grau' : 'graus'} ·{' '}
                 {dateLabel(e.date)} de {e.date.slice(0, 4)}
               </span>
+              {e.note && <span className="muted">{e.note}</span>}
             </div>
           </div>
         ))
@@ -650,13 +846,50 @@ function History({
 }
 function TeacherActions({ s, mutate }: { s: StudentView; mutate: Mutate }) {
   const [belt, setBelt] = useState<Belt>('branca'),
-    [degrees, setDegrees] = useState(0)
+    [degrees, setDegrees] = useState(0),
+    [note, setNote] = useState(''),
+    [sheet, setSheet] = useState(false)
+  const toast = useToast()
   // A failed/uncertain retry keeps its request key until the server revision changes.
   const keys = useRef<Record<string, string>>({})
+  // O toast de Desfazer roda depois do refresh; o ref guarda o estado mais recente.
+  const sRef = useRef(s)
+  sRef.current = s
   const keyFor = (kind: string) =>
-    keys.current[s.revision + kind] ?? (keys.current[s.revision + kind] = crypto.randomUUID())
+    keys.current[sRef.current.revision + kind] ??
+    (keys.current[sRef.current.revision + kind] = crypto.randomUUID())
   const last = s.events.find((e) => e.kind !== 'initial' && !e.cancelled),
     next = belts[belts.indexOf(s.belt) + 1]
+  // Plano UX fase 5: graduar em 2 toques — a folha executa na hora e o toast
+  // oferece o Desfazer; por isso não há diálogo de confirmação aqui. A folha
+  // só fecha no sucesso: se o mutate falhar, o erro aparece dentro dela.
+  const graduar = (kind: 'grau' | 'faixa') => {
+    const st = sRef.current
+    return mutate('graduate_student', {
+      p_student: st.id,
+      p_kind: kind,
+      p_key: keyFor(kind),
+      p_revision: st.revision,
+      p_note: note.trim() || null,
+    })
+      .then(() => {
+        setSheet(false)
+        setNote('')
+        const msg =
+          kind === 'grau'
+            ? 'Grau concedido.'
+            : `Promovido para a faixa ${belts[belts.indexOf(st.belt) + 1]}.`
+        toast.show(msg, () => {
+          const atual = sRef.current
+          const ev = atual.events.find((e) => e.kind !== 'initial' && !e.cancelled)
+          return mutate('undo_graduation', {
+            p_student: st.id,
+            p_event: ev?.id,
+            p_revision: atual.revision,
+          })
+        })
+      })
+  }
   return (
     <section className="teacher-actions">
       <div className="section-heading">
@@ -694,6 +927,13 @@ function TeacherActions({ s, mutate }: { s: StudentView; mutate: Mutate }) {
                 ))}
               </select>
             </Field>
+            <Field label="Observação (opcional)">
+              <input
+                value={note}
+                maxLength={300}
+                onChange={(e) => setNote(e.target.value)}
+              />
+            </Field>
           </div>
           <ActionButton
             className="secondary"
@@ -704,6 +944,7 @@ function TeacherActions({ s, mutate }: { s: StudentView; mutate: Mutate }) {
                 p_belt: belt,
                 p_degrees: degrees,
                 p_revision: s.revision,
+                p_note: note.trim() || null,
               })
             }
           >
@@ -711,53 +952,83 @@ function TeacherActions({ s, mutate }: { s: StudentView; mutate: Mutate }) {
           </ActionButton>
         </div>
       )}
-      <div className="graduation-buttons">
-        <ActionButton
-          className="primary"
-          disabled={s.belt === 'preta' || s.degrees >= 4}
-          confirm={`Conceder mais um grau a ${s.name}? As aulas do próximo ciclo começam amanhã.`}
-          action={() =>
-            mutate('graduate_student', {
-              p_student: s.id,
-              p_kind: 'grau',
-              p_key: keyFor('grau'),
-              p_revision: s.revision,
-            })
-          }
-        >
-          <Award size={18} /> Conceder grau
-        </ActionButton>
-        {next && (
-          <ActionButton
-            className="secondary"
-            confirm={`Promover ${s.name} para a faixa ${next}? Os graus voltam a zero e o próximo ciclo começa amanhã.`}
-            action={() =>
-              mutate('graduate_student', {
-                p_student: s.id,
-                p_kind: 'faixa',
-                p_key: keyFor('faixa'),
-                p_revision: s.revision,
-              })
-            }
-          >
-            Promover para {next}
-          </ActionButton>
-        )}
-      </div>
+      {s.belt !== 'preta' && (
+        <button className="primary graduar-trigger" type="button" onClick={() => setSheet(true)}>
+          <Award size={18} /> Graduar
+        </button>
+      )}
       {s.belt === 'preta' && (
         <p className="muted">Graus da faixa preta não são acompanhados nesta versão.</p>
       )}
-      {last && (
-        <ActionButton
-          className="text-button danger"
-          confirm="Desfazer a última graduação? A faixa, os graus e a contagem do ciclo serão restaurados; as presenças serão mantidas."
-          action={() =>
-            mutate('undo_graduation', { p_student: s.id, p_event: last.id, p_revision: s.revision })
-          }
-        >
-          Desfazer última graduação
-        </ActionButton>
-      )}
+      <div className="teacher-actions-row">
+        <OverflowMenu label="Mais ações">
+          {/* data-stay: o menu não fecha ao clicar, para o diálogo de confirmação existir. */}
+          <div data-stay>
+            {last && (
+              <ActionButton
+                className="text-button danger"
+                confirm="Desfazer a última graduação? A faixa, os graus e a contagem do ciclo serão restaurados; as presenças serão mantidas."
+                success="Graduação desfeita."
+                action={() =>
+                  mutate('undo_graduation', {
+                    p_student: s.id,
+                    p_event: last.id,
+                    p_revision: s.revision,
+                  })
+                }
+              >
+                Desfazer última graduação
+              </ActionButton>
+            )}
+            {s.memberStatus === 'ativo' ? (
+              <ActionButton
+                className="text-button danger"
+                confirm={`Marcar ${s.name} como inativo? O aluno perde o acesso ao app; o histórico fica guardado e você pode reativar depois.`}
+                success="Aluno marcado como inativo."
+                action={() =>
+                  mutate('set_student_status', { p_user: s.id, p_status: 'inativo' })
+                }
+              >
+                Marcar como inativo
+              </ActionButton>
+            ) : (
+              s.memberStatus === 'inativo' && (
+                <ActionButton
+                  className="text-button"
+                  confirm={`Reativar ${s.name}? O aluno volta a ter acesso ao app.`}
+                  success="Aluno reativado."
+                  action={() =>
+                    mutate('set_student_status', { p_user: s.id, p_status: 'ativo' })
+                  }
+                >
+                  Reativar aluno
+                </ActionButton>
+              )
+            )}
+          </div>
+        </OverflowMenu>
+      </div>
+      <BottomSheet open={sheet} title="Graduar" onClose={() => setSheet(false)}>
+        <div className="menu-list">
+          <Field label="Observação (opcional)">
+            <input
+              value={note}
+              maxLength={300}
+              placeholder="Ex.: examenito, seminário..."
+              onChange={(e) => setNote(e.target.value)}
+            />
+          </Field>
+          <ActionButton className="primary" disabled={s.degrees >= 4} action={() => graduar('grau')}>
+            <Award size={18} /> +1 grau
+          </ActionButton>
+          {next && (
+            <ActionButton className="secondary" action={() => graduar('faixa')}>
+              Nova faixa {next}
+            </ActionButton>
+          )}
+          <p className="field-help">A ação é aplicada na hora; use o Desfazer do aviso se errar.</p>
+        </div>
+      </BottomSheet>
     </section>
   )
 }
@@ -765,15 +1036,18 @@ function JoinCode({ call, owner, teamName }: { call: Call; owner: boolean; teamN
   const [code, setCode] = useState<string | null | undefined>(undefined),
     [custom, setCustom] = useState(''),
     [copied, setCopied] = useState(''),
-    [error, setError] = useState('')
+    [error, setError] = useState(''),
+    [retry, setRetry] = useState(0)
   useEffect(() => {
+    setError('')
+    setCode(undefined)
     call<string | null>('get_join_code')
       .then(setCode)
       .catch((e) => setError(friendlyError(e)))
-  }, [call])
+  }, [call, retry])
   const link = code ? `${location.origin}/?codigo=${encodeURIComponent(code)}` : ''
   const message = code
-    ? `Olá! Para entrar na turma ${teamName} no app Tatame, abra ${link} e cadastre-se. Código da turma: ${code}`
+    ? `Olá! Para entrar na equipe ${teamName} no app Tatame, abra ${link} e cadastre-se. Código da equipe: ${code}`
     : ''
   async function copy(text: string, what: string) {
     try {
@@ -792,7 +1066,7 @@ function JoinCode({ call, owner, teamName }: { call: Call; owner: boolean; teamN
   async function share() {
     if (navigator.share) {
       try {
-        await navigator.share({ title: 'Código da turma', text: message })
+        await navigator.share({ title: 'Código da equipe', text: message })
         return
       } catch (e) {
         if ((e as DOMException).name === 'AbortError') return
@@ -807,7 +1081,14 @@ function JoinCode({ call, owner, teamName }: { call: Call; owner: boolean; teamN
         Envie para seus alunos. Quem se cadastrar com ele entra como pendente até você aprovar em
         Alunos.
       </p>
-      {error && <p className="error-message">{error}</p>}
+      {error && (
+        <p className="error-message" role="alert">
+          {error}{' '}
+          <button className="text-button" onClick={() => setRetry((r) => r + 1)}>
+            Tentar de novo
+          </button>
+        </p>
+      )}
       {code === undefined && !error && <p className="muted">Carregando…</p>}
       {code === null && (
         <p className="notice">
@@ -817,7 +1098,7 @@ function JoinCode({ call, owner, teamName }: { call: Call; owner: boolean; teamN
       )}
       {code && (
         <>
-          <p className="join-code-value" aria-label="Código da turma">
+          <p className="join-code-value" aria-label="Código da equipe">
             {code}
           </p>
           <div className="graduation-buttons">
@@ -918,6 +1199,9 @@ function Settings({
   owner,
   call,
   demo,
+  today,
+  onChanged,
+  sair,
 }: {
   goal: number | null
   mutate: Mutate
@@ -925,6 +1209,9 @@ function Settings({
   owner: boolean
   call: Call
   demo: boolean
+  today: string
+  onChanged: () => Promise<void>
+  sair: () => Promise<void>
 }) {
   const [value, setValue] = useState(goal?.toString() ?? ''),
     [name, setName] = useState(team?.name ?? ''),
@@ -938,7 +1225,7 @@ function Settings({
     <>
       <JoinCode call={call} owner={owner} teamName={team?.name ?? 'da equipe'} />
       <section className="settings-card">
-        <h2>Do jeito da sua turma.</h2>
+        <h2>Do jeito da sua equipe.</h2>
         <p className="muted">Uma referência para acompanhar a constância dos alunos.</p>
         <Field label="Meta de aulas por ciclo">
           <input
@@ -981,9 +1268,20 @@ function Settings({
                 <input type="color" value={accent} onChange={(e) => setAccent(e.target.value)} />
               </Field>
             </div>
+            {(() => {
+              // Bloqueia cores ilegíveis em vez de ajustá-las: o dono escolhe a alternativa.
+              const falhas = falhasDeContraste(primary, accent)
+              if (!falhas.length) return null
+              return (
+                <p className="error-message" role="alert">
+                  {falhas.map((f) => `${f.par} fica difícil de ler. `).join('')}
+                  Escolha uma combinação com mais contraste.
+                </p>
+              )
+            })()}
             <ActionButton
               className="secondary"
-              disabled={name.trim().length < 2}
+              disabled={name.trim().length < 2 || falhasDeContraste(primary, accent).length > 0}
               success="Visual atualizado."
               action={() =>
                 mutate('update_team', { p_name: name, p_primary: primary, p_accent: accent })
@@ -1044,6 +1342,10 @@ function Settings({
         )}
         <Notifications demo={demo} />
       </section>
+      <Schedules call={call} today={today} onChanged={onChanged} />
+      <ActionButton className="secondary" action={sair}>
+        <LogOut size={17} /> Sair
+      </ActionButton>
     </>
   )
 }
@@ -1139,9 +1441,14 @@ export default function App() {
     if (team) {
       root.setProperty('--green', team.primaryColor)
       root.setProperty('--accent', team.accentColor)
+      // Barra do navegador e título da aba acompanham o visual da equipe.
+      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', team.primaryColor)
+      document.title = `${team.name} · Tatame`
     } else {
       root.removeProperty('--green')
       root.removeProperty('--accent')
+      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#234c3a')
+      document.title = 'Tatame · Minha equipe'
     }
   }, [team])
   async function logout() {
@@ -1163,14 +1470,14 @@ export default function App() {
         <Brand team={data?.team} />
         <WifiOff size={44} />
         <h1>Você está sem conexão</h1>
-        <p>Conecte-se à internet para acessar sua turma e registrar os treinos.</p>
+        <p>Conecte-se à internet para acessar sua equipe e registrar os treinos.</p>
         <p className="muted">Nenhuma ação será registrada enquanto você estiver offline.</p>
       </div>
     )
   if (!authReady)
     return (
       <div className="loading-screen" role="status">
-        Carregando sua turma…
+        Carregando sua equipe…
       </div>
     )
   if ((!userId && !demo) || recovery)
@@ -1203,7 +1510,7 @@ export default function App() {
             </ActionButton>
           </>
         ) : (
-          <p role="status">Carregando sua turma…</p>
+          <p role="status">Carregando sua equipe…</p>
         )}
       </div>
     )
@@ -1229,10 +1536,17 @@ export default function App() {
     owner = data.profile.role === 'dono',
     active = data.students.filter((s) => s.memberStatus === 'ativo'),
     pendingMembers = data.students.filter((s) => s.memberStatus === 'pendente'),
+    inativos = data.students.filter((s) => s.memberStatus === 'inativo'),
     student = teacher ? data.students.find((s) => s.id === selected) : data.students[0],
     filtered = active.filter((s) =>
       s.name.toLocaleLowerCase('pt-BR').includes(search.toLocaleLowerCase('pt-BR')),
     )
+  const resolveAvatars = demo
+    ? (paths: string[]) => demo.photos.urls(paths)
+    : supabaseAvatarUrls
+  const uploadAvatarFile: AvatarUpload = demo
+    ? (path, file) => demo.photos.upload(path, file)
+    : supabaseUploadAvatar
   const badgeTotal = teacher ? pendingMembers.length + reviewsToday : 0
   const pages = teacher
     ? [
@@ -1242,9 +1556,9 @@ export default function App() {
         { id: 'settings', label: 'Mais', icon: <Settings2 size={20} /> },
       ]
     : [
-        { id: 'overview', label: 'Meu progresso', icon: <LayoutDashboard size={20} /> },
+        { id: 'overview', label: 'Treinar', icon: <CalendarCheck size={20} /> },
         { id: 'agenda', label: 'Treinos', icon: <CalendarClock size={20} /> },
-        { id: 'history', label: 'Histórico', icon: <CalendarDays size={20} /> },
+        { id: 'history', label: 'Eu', icon: <User size={20} /> },
       ]
   function nav(next: string) {
     setPage(next)
@@ -1282,7 +1596,7 @@ export default function App() {
       )}
       <aside className="sidebar">
         <Brand team={data?.team} />
-        <span className="sidebar-label">{(data.team?.name ?? 'Minha turma').toUpperCase()}</span>
+        <span className="sidebar-label">{(data.team?.name ?? 'Minha equipe').toUpperCase()}</span>
         <nav aria-label="Navegação principal">
           {pages.map((p) => (
             <button key={p.id} className={page === p.id ? 'active' : ''} onClick={() => nav(p.id)}>
@@ -1316,7 +1630,7 @@ export default function App() {
             <Brand team={data?.team} />
           </div>
           <span className="desktop-breadcrumb">
-            {data.team?.name ?? 'Minha turma'} <ChevronRight size={14} />{' '}
+            {data.team?.name ?? 'Minha equipe'} <ChevronRight size={14} />{' '}
             {teacher ? 'Área do professor' : 'Área do aluno'}
           </span>
           <span className="date-chip">
@@ -1351,8 +1665,8 @@ export default function App() {
                 {selected
                   ? student?.name
                   : page === 'settings'
-                    ? 'Configurações'
-                    : page === 'agenda'
+                  ? 'Ajustes da equipe.'
+                  : page === 'agenda'
                       ? teacher
                         ? 'Calendário.'
                         : 'Treinos da equipe.'
@@ -1360,7 +1674,7 @@ export default function App() {
                         ? 'Sua caminhada.'
                         : teacher
                           ? page === 'students'
-                            ? 'Sua turma.'
+                            ? 'Sua equipe.'
                             : 'Hoje.'
                           : `Olá, ${data.profile.name.split(' ')[0]}.`}
               </h1>
@@ -1368,7 +1682,7 @@ export default function App() {
                 {selected
                   ? 'Cada treino conta na evolução do aluno.'
                   : page === 'settings'
-                    ? 'Organize as referências e o acesso da turma.'
+                    ? 'Acesso, meta, visual e horários padrão.'
                     : page === 'agenda'
                       ? teacher
                         ? 'Aulas, fotos, descrições, check-ins e presenças.'
@@ -1396,6 +1710,9 @@ export default function App() {
               owner={owner}
               call={call}
               demo={!!demo}
+              today={data.today}
+              onChanged={refresh}
+              sair={logout}
             />
           ) : page === 'agenda' ? (
             <Agenda
@@ -1437,13 +1754,12 @@ export default function App() {
                 {filtered.length ? (
                   filtered.map((s) => (
                     <button className="student-row" key={s.id} onClick={() => setSelected(s.id)}>
-                      <span className={'avatar small belt-' + s.belt} aria-hidden="true">
-                        {s.name
-                          .split(' ')
-                          .map((w) => w[0])
-                          .slice(0, 2)
-                          .join('')}
-                      </span>
+                      <StudentAvatar
+                        path={s.avatarPath}
+                        name={s.name}
+                        belt={s.belt}
+                        resolve={resolveAvatars}
+                      />
                       <span className="student-name">
                         <strong>{s.name}</strong>
                         <span>
@@ -1465,34 +1781,89 @@ export default function App() {
                   <p className="empty">
                     {active.length
                       ? 'Nenhum aluno com esse nome.'
-                      : 'Seus alunos aparecerão aqui quando se cadastrarem com o código da turma.'}
+                      : 'Seus alunos aparecerão aqui quando se cadastrarem com o código da equipe.'}
                   </p>
+                )}
+                {inativos.length > 0 && (
+                  <>
+                    <div className="section-heading inactive-heading">
+                      <h3>Inativos</h3>
+                      <span className="muted">Sem acesso ao app</span>
+                    </div>
+                    {inativos
+                      .filter((s) =>
+                        s.name.toLocaleLowerCase('pt-BR').includes(search.toLocaleLowerCase('pt-BR')),
+                      )
+                      .map((s) => (
+                        <button className="student-row cancelled" key={s.id} onClick={() => setSelected(s.id)}>
+                          <StudentAvatar
+                            path={s.avatarPath}
+                            name={s.name}
+                            belt={s.belt}
+                            resolve={resolveAvatars}
+                          />
+                          <span className="student-name">
+                            <strong>{s.name}</strong>
+                            <span>
+                              Faixa {s.belt} · {s.total} {s.total === 1 ? 'aula' : 'aulas'}
+                            </span>
+                          </span>
+                          <span className="status-pill">Inativo</span>
+                          <ChevronRight size={18} />
+                        </button>
+                      ))}
+                  </>
                 )}
               </section>
             )
           ) : student ? (
-            <div className="student-layout">
-              <div className="student-primary">
-                {page !== 'history' && (
+            teacher ? (
+              <div className="student-layout">
+                <div className="student-primary">
                   <StudentSummary
                     student={student}
                     goal={data.goal}
-                    teacher={teacher}
-                    call={call}
-                    onChanged={refresh}
-                    onCheckin={demo ? undefined : notifyCheckin}
+                    teacher
+                    resolveAvatars={resolveAvatars}
                   />
-                )}
-                <History
-                  key={student.id}
-                  s={student}
-                  teacher={teacher}
-                  mutate={mutate}
-                  call={call}
-                />
+                  <History
+                    key={student.id}
+                    s={student}
+                    teacher
+                    mutate={mutate}
+                    call={call}
+                    collapsed
+                  />
+                </div>
+                <TeacherActions key={student.id} s={student} mutate={mutate} />
               </div>
-              {teacher && <TeacherActions key={student.id} s={student} mutate={mutate} />}
-            </div>
+            ) : page === 'overview' ? (
+              <TrainTab
+                student={student}
+                call={call}
+                photos={demo ? demo.photos : supabasePhotos}
+                onChanged={refresh}
+                onCheckin={demo ? undefined : notifyCheckin}
+              />
+            ) : (
+              <div className="student-primary">
+                <StudentSummary
+                  student={student}
+                  goal={data.goal}
+                  teacher={false}
+                  call={call}
+                  mutate={mutate}
+                  resolveAvatars={resolveAvatars}
+                  uploadAvatarFile={uploadAvatarFile}
+                  teamId={data.team?.id ?? ''}
+                  onChanged={refresh}
+                />
+                <History key={student.id} s={student} teacher={false} mutate={mutate} call={call} />
+                <ActionButton className="secondary" action={logout}>
+                  <LogOut size={17} /> Sair
+                </ActionButton>
+              </div>
+            )
           ) : null}
           <footer className="workspace-footer" aria-hidden="true">
             <span>Feito para a sua caminhada no tatame.</span>

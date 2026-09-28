@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import type { Belt } from '../domain/rules'
 
 export type TeamRole = 'aluno' | 'professor' | 'dono'
-export type MemberStatus = 'pendente' | 'ativo' | 'bloqueado'
+export type MemberStatus = 'pendente' | 'ativo' | 'inativo' | 'bloqueado'
 export type PresenceStatus = 'pendente' | 'confirmada' | 'rejeitada'
 export type Profile = { id: string; name: string; role: TeamRole; revision: number }
 export type Team = {
@@ -19,6 +19,7 @@ export type RankEvent = {
   belt: Belt
   degrees: number
   date: string
+  note?: string | null
   cancelled: boolean
 }
 export type AttendanceView = {
@@ -41,6 +42,12 @@ export type StudentView = {
   cycle: number
   today: string
   initialSet: boolean
+  /** Aulas que aconteceram desde a entrada do aluno (denominador da frequência). */
+  held: number
+  avatarPath: string | null
+  contact: string | null
+  birthDate: string | null
+  joinedAt: string
   attendances: AttendanceView[]
   events: RankEvent[]
 }
@@ -99,7 +106,7 @@ export function logoUrl(path: string | null | undefined): string | null {
   return url ? `${url}/storage/v1/object/public/${LOGO_BUCKET}/${path}` : null
 }
 export async function uploadLogo(teamId: string, file: Blob): Promise<string> {
-  if (!supabase) throw new Error('Turma não conectada.')
+  if (!supabase) throw new Error('Equipe não conectada.')
   const ext = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg'
   const path = `${teamId}/logo-${crypto.randomUUID()}.${ext}`
   const { error } = await supabase.storage
@@ -112,9 +119,37 @@ export async function removeLogo(path: string) {
   if (supabase && !/^(blob:|data:)/.test(path))
     await supabase.storage.from(LOGO_BUCKET).remove([path])
 }
+export const AVATAR_BUCKET = 'avatars'
+/** Caminho do avatar: avatars/{equipe}/{usuário}/{uuid}.{ext}. */
+export function avatarPath(teamId: string, userId: string, file: Blob): string {
+  const ext = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg'
+  return `${AVATAR_BUCKET}/${teamId}/${userId}/${crypto.randomUUID()}.${ext}`
+}
+export async function uploadAvatar(path: string, file: Blob) {
+  if (!supabase) throw new Error('Equipe não conectada.')
+  const { error } = await supabase.storage
+    .from(AVATAR_BUCKET)
+    .upload(path, file, { contentType: file.type, upsert: false })
+  if (error) throw new Error(error.message)
+}
+export async function removeAvatar(path: string) {
+  if (supabase && !/^(blob:|data:)/.test(path))
+    await supabase.storage.from(AVATAR_BUCKET).remove([path])
+}
+/** URLs assinadas de avatares (bucket privado, 1 hora). */
+export async function avatarUrls(paths: string[]): Promise<Record<string, string>> {
+  if (!supabase || paths.length === 0) return {}
+  const { data, error } = await supabase.storage.from(AVATAR_BUCKET).createSignedUrls(paths, 3600)
+  if (error) throw new Error(error.message)
+  return Object.fromEntries(
+    (data ?? [])
+      .filter((d) => d.signedUrl && d.path)
+      .map((d) => [d.path!, d.signedUrl as string]),
+  )
+}
 export const supabasePhotos: PhotoStore = {
   async upload(path, file) {
-    if (!supabase) throw new Error('Turma não conectada.')
+    if (!supabase) throw new Error('Equipe não conectada.')
     const { error } = await supabase.storage
       .from(PHOTO_BUCKET)
       .upload(path, file, { contentType: file.type || 'image/jpeg', upsert: false })
@@ -169,7 +204,7 @@ export async function rpc<T>(name: string, args?: Record<string, unknown>): Prom
     throw new Error('Você está sem conexão. Tente novamente quando a internet voltar.')
   if (!supabase)
     throw new Error(
-      'A turma ainda não foi conectada. Use a demonstração para conhecer o aplicativo.',
+      'A equipe ainda não foi conectada. Use a demonstração para conhecer o app.',
     )
   const { data, error } = await supabase.rpc(name, args)
   if (error) throw new Error(error.message)
@@ -178,7 +213,7 @@ export async function rpc<T>(name: string, args?: Record<string, unknown>): Prom
 export const isStaff = (role: TeamRole | undefined) => role === 'professor' || role === 'dono'
 
 export async function loadDashboard(id: string): Promise<Dashboard> {
-  if (!supabase) throw new Error('Turma não conectada.')
+  if (!supabase) throw new Error('Equipe não conectada.')
   const { data: profile, error } = await supabase
     .from('profiles')
     .select('id,name,revision')
@@ -214,7 +249,7 @@ export function friendlyError(error: unknown): string {
   if (/User already registered/.test(message))
     return 'Este e-mail já tem uma conta. Entre ou recupere sua senha.'
   if (/Database error saving new user/.test(message))
-    return 'Confira o código da turma e seu nome. Não foi possível criar a conta.'
+    return 'Confira o código da equipe e seu nome. Não foi possível criar a conta.'
   if (/fetch|network|Failed to fetch/i.test(message))
     return 'Não foi possível confirmar a operação. Verifique a conexão e tente novamente.'
   if (/rate limit/i.test(message))

@@ -12,16 +12,75 @@ test('fluxo demonstrativo de presença, professor, graduação e correção', as
   await expect(page.getByText('Aguardando aprovação')).toHaveCount(0)
   await page.getByRole('button', { name: 'Alunos' }).first().click()
   await page.getByRole('button', { name: /Lucas Almeida/ }).click()
-  await page.getByRole('button', { name: 'Conceder grau', exact: true }).click()
-  await page.getByRole('button', { name: 'Confirmar', exact: true }).click()
+  await page.getByRole('button', { name: 'Graduar', exact: true }).click()
+  await page.getByRole('button', { name: '+1 grau' }).click()
   await expect(page.getByTestId('current-degrees')).toHaveText('2 graus')
   await expect(page.getByTestId('cycle-count')).toHaveText('0')
+  await page.getByRole('button', { name: 'Mais ações' }).click()
   await page.getByRole('button', { name: 'Desfazer última graduação' }).click()
   await page.getByRole('button', { name: 'Confirmar', exact: true }).click()
   await expect(page.getByTestId('current-degrees')).toHaveText('1 grau')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   )
+})
+test('aluno: check-in em 1 toque a partir da abertura', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Conhecer a demonstração' }).click()
+  // Primeiro cartão da aba Treinar: a próxima aula com o botão grande, à vista
+  // sem rolar — o check-in é o primeiro toque do dia.
+  const hero = page.locator('.train-hero')
+  await expect(hero).toBeVisible()
+  const botao = hero.getByRole('button', { name: 'Vou treinar' })
+  await expect(botao).toBeInViewport()
+  await botao.click()
+  await expect(hero.getByRole('button', { name: 'Desistir' })).toBeVisible()
+  // Aba Eu: graduação, contagens, histórico e sair.
+  await page.getByRole('button', { name: 'Eu' }).first().click()
+  await expect(page.getByText('SUA GRADUAÇÃO')).toBeVisible()
+  await expect(page.getByText('Seu histórico')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Sair' }).last()).toBeVisible()
+})
+test('aluno: último treino com foto no Treinar', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Conhecer a demonstração' }).click()
+  await expect(page.getByText('Último treino')).toBeVisible()
+  await expect(page.locator('.last-training img')).toBeVisible()
+})
+test('professor: graduar em 2 toques e desfazer pelo toast', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Conhecer a demonstração' }).click()
+  await page.getByRole('button', { name: 'Ver como professor' }).click()
+  await page.getByRole('button', { name: 'Alunos' }).first().click()
+  await page.getByRole('button', { name: /Lucas Almeida/ }).click()
+  await page.getByRole('button', { name: 'Graduar', exact: true }).click()
+  await page.getByRole('button', { name: '+1 grau' }).click()
+  await expect(page.getByTestId('current-degrees')).toHaveText('2 graus')
+  const toast = page.locator('.toast')
+  await expect(toast).toContainText('Grau concedido')
+  await toast.getByRole('button', { name: 'Desfazer' }).click()
+  await expect(page.getByTestId('current-degrees')).toHaveText('1 grau')
+})
+test('professor: histórico recolhido e destrutivas no ⋯', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Conhecer a demonstração' }).click()
+  await page.getByRole('button', { name: 'Ver como professor' }).click()
+  await page.getByRole('button', { name: 'Alunos' }).first().click()
+  await page.getByRole('button', { name: /Lucas Almeida/ }).click()
+  // O histórico vem recolhido; as destrutivas só existem no menu "⋯".
+  await expect(page.getByRole('button', { name: 'Ver histórico' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Desfazer última graduação' })).toHaveCount(0)
+  // Concede um grau para depois desfazer pelo "⋯".
+  await page.getByRole('button', { name: 'Graduar', exact: true }).click()
+  await page.getByRole('button', { name: '+1 grau' }).click()
+  await expect(page.getByTestId('current-degrees')).toHaveText('2 graus')
+  await page.getByRole('button', { name: 'Mais ações' }).click()
+  await page.getByRole('button', { name: 'Desfazer última graduação' }).click()
+  await page.getByRole('button', { name: 'Confirmar', exact: true }).click()
+  await expect(page.getByTestId('current-degrees')).toHaveText('1 grau')
+  await page.getByRole('button', { name: 'Fechar' }).click()
+  await page.getByRole('button', { name: 'Ver histórico' }).click()
+  await expect(page.getByRole('button', { name: 'Graduações' })).toBeVisible()
 })
 test('offline esconde dados e bloqueia ações; reconexão recupera', async ({ page, context }) => {
   await page.goto('/')
@@ -36,7 +95,7 @@ test('acesso tem rótulos e cadastro não oferece papel de professor', async ({ 
   await page.goto('/')
   await page.getByRole('button', { name: 'Criar conta' }).click()
   await expect(page.getByLabel('Nome completo')).toBeVisible()
-  await expect(page.getByLabel('Código da turma')).toBeVisible()
+  await expect(page.getByLabel('Código da equipe')).toBeVisible()
   await expect(page.getByRole('combobox')).toHaveCount(0)
   await page.getByLabel('Nome completo').focus()
   await page.keyboard.press('Tab')
@@ -51,10 +110,13 @@ test('calendário: professor cria horário, descreve aula, envia foto e lança p
   await page.getByRole('button', { name: 'Calendário' }).first().click()
   await expect(page.getByRole('grid')).toBeVisible()
   await expect(page.getByRole('gridcell')).toHaveCount(42)
+  // Horários padrão ficam na aba Mais.
+  await page.getByRole('button', { name: 'Mais' }).first().click()
   await page.getByRole('button', { name: 'Novo horário' }).click()
   await page.getByLabel('Nome da aula').fill('Kids')
   await page.getByRole('button', { name: 'Criar horário' }).click()
   await expect(page.getByText('Kids').first()).toBeVisible()
+  await page.getByRole('button', { name: 'Calendário' }).first().click()
   // Abre a aula mais recente que já aconteceu (dias com aula têm "aula(s)" no
   // rótulo). Espera as células com aula existirem antes de capturar os rótulos.
   const cells = page.getByRole('gridcell', { name: /aula\(s\)/ })
@@ -116,6 +178,7 @@ test('cadastro de aula: pelo botão (futura) e por um dia passado (com foto e pr
 
   // Validação: nome vazio e duração inválida mostram erros e não criam nada.
   await page.getByRole('button', { name: 'Nova aula', exact: true }).click()
+  await page.getByRole('button', { name: /Mais opções/ }).click()
   await page.getByLabel('Nome da aula').fill(' ')
   await page.getByLabel('Duração (min)').fill('5')
   await page.getByRole('button', { name: 'Criar aula' }).click()
@@ -188,6 +251,24 @@ test('cadastro de aula: pelo botão (futura) e por um dia passado (com foto e pr
     true,
   )
 })
+test('professor cria aula rápida em 2 toques pela folha "+ Aula"', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Conhecer a demonstração' }).click()
+  await page.getByRole('button', { name: 'Ver como professor' }).click()
+  await page.getByRole('button', { name: 'Calendário' }).first().click()
+  await page.getByRole('button', { name: 'Nova aula', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Nova aula' })).toBeVisible()
+  // Horário frequente vem dos horários padrão da equipe.
+  const chip = page.getByRole('button', { name: /Jiu-jítsu adulto · 19:00/ })
+  await expect(chip).toBeVisible()
+  await expect(chip).toHaveClass(/on/)
+  await page.getByRole('button', { name: 'Amanhã' }).click()
+  await expect(page.getByText(/· Jiu-jítsu adulto às 19:00 · 90 min/)).toBeVisible()
+  await page.getByRole('button', { name: 'Criar aula', exact: true }).click()
+  await expect(page.getByText('Aula criada.').first()).toBeVisible()
+  await expect(page.getByRole('heading', { name: /Jiu-jítsu adulto/ })).toBeVisible()
+})
+
 test('professor vê, copia e troca o código de acesso; link abre cadastro preenchido', async ({
   page,
   context,
@@ -200,7 +281,7 @@ test('professor vê, copia e troca o código de acesso; link abre cadastro preen
   await page.getByRole('button', { name: 'Conhecer a demonstração' }).click()
   await page.getByRole('button', { name: 'Ver como professor' }).click()
   await page.getByRole('button', { name: 'Mais' }).first().click()
-  await expect(page.getByLabel('Código da turma')).toHaveText('TIGR-2026')
+  await expect(page.getByLabel('Código da equipe')).toHaveText('TIGR-2026')
   if (clipboardPermitido) {
     // WebKit no Windows não conhece essas permissões; o resto do teste
     // (trocar código e link de cadastro) não depende da área de transferência.
@@ -211,11 +292,39 @@ test('professor vê, copia e troca o código de acesso; link abre cadastro preen
   await page.getByText('Trocar código').click()
   await page.getByRole('button', { name: 'Gerar novo código' }).click()
   await page.getByRole('button', { name: 'Confirmar', exact: true }).click()
-  await expect(page.getByLabel('Código da turma')).not.toHaveText('TIGR-2026')
-  await expect(page.getByLabel('Código da turma')).toHaveText(
+  await expect(page.getByLabel('Código da equipe')).not.toHaveText('TIGR-2026')
+  await expect(page.getByLabel('Código da equipe')).toHaveText(
     /^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/,
   )
   await page.goto('/?codigo=ABCD-EFGH')
-  await expect(page.getByLabel('Código da turma')).toHaveValue('ABCD-EFGH')
+  await expect(page.getByLabel('Código da equipe')).toHaveValue('ABCD-EFGH')
   await expect(page.getByLabel('Nome completo')).toBeVisible()
+})
+
+test('visual da equipe: tema segue as cores e contraste bloqueia salvamento', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Conhecer a demonstração' }).click()
+  await page.getByRole('button', { name: 'Ver como professor' }).click()
+  await page.getByRole('button', { name: 'Mais' }).first().click()
+  // Título da aba e barra do navegador acompanham a equipe.
+  await expect(page).toHaveTitle('Equipe Demonstração · Tatame')
+  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#234c3a')
+  const principal = page.locator('.team-form input[type="color"]').first()
+  const destaque = page.locator('.team-form input[type="color"]').nth(1)
+  // Cor principal clara demais: mensagem aparece e o salvamento trava.
+  await principal.fill('#cccccc')
+  await expect(page.getByText('fica difícil de ler')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Salvar visual' })).toBeDisabled()
+  // Destaque igual à principal: também trava.
+  await principal.fill('#234c3a')
+  await destaque.fill('#1d3a2c')
+  await expect(page.getByText('fica difícil de ler')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Salvar visual' })).toBeDisabled()
+  // Cores válidas: salva e o tema da página acompanha na hora.
+  await destaque.fill('#cee68b')
+  await page.getByLabel('Nome da equipe').fill('Equipe Teste')
+  await page.getByRole('button', { name: 'Salvar visual' }).click()
+  await expect(page.getByText('Visual atualizado.').first()).toBeVisible()
+  await expect(page).toHaveTitle('Equipe Teste · Tatame')
+  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#234c3a')
 })

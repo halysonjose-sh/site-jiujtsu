@@ -27,7 +27,7 @@ self.addEventListener('push', (event) => {
   }
   event.waitUntil(
     self.registration.showNotification(data.title ?? 'Tatame', {
-      body: data.body ?? 'Há novidades na sua turma.',
+      body: data.body ?? 'Há novidades na sua equipe.',
       icon: '/icon-192.png',
       badge: '/icon-192.png',
       data: { url: data.url ?? '/' },

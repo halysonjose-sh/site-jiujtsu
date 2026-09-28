@@ -50,6 +50,9 @@ test('professor faz a chamada em 3 toques, zera o contador e desfaz', async ({ p
 
   // Segundo fluxo, com Desfazer: confirma quem não tinha registro e volta atrás.
   await cartao.getByRole('button', { name: 'Fazer chamada' }).click()
+  // Espera os dados da folha carregarem (Lucas já confirmado): marcar antes
+  // disso calcula as mudanças contra a lista vazia e desmarcaria Lucas.
+  await expect(folha.getByRole('checkbox', { name: 'Lucas Almeida' })).toBeChecked()
   await folha.getByRole('checkbox', { name: 'Pedro Oliveira' }).check()
   await folha.getByRole('button', { name: 'Salvar presenças' }).click()
   await expect(folha.getByText('Chamada salva')).toBeVisible()

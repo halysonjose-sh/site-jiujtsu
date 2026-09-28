@@ -43,10 +43,14 @@ type DemoStudent = {
   id: string
   name: string
   revision: number
-  memberStatus: 'pendente' | 'ativo'
-  initial: { belt: Belt; degrees: number } | null
+  memberStatus: 'pendente' | 'ativo' | 'inativo'
+  initial: { belt: Belt; degrees: number; note?: string | null } | null
   events: Graduation[]
   kinds: Record<string, 'grau' | 'faixa'>
+  avatarPath: string | null
+  contact: string | null
+  birthDate: string | null
+  joinedAt: string
 }
 const TEAM = 't-demo'
 const professor = { id: 'professor-demo', name: 'Rafael Costa', role: 'dono' as const, revision: 0 }
@@ -112,6 +116,10 @@ export function createDemo() {
       initial: { belt: 'azul', degrees: 1 },
       events: [],
       kinds: {},
+      avatarPath: null,
+      contact: '(11) 98888-1234',
+      birthDate: '1995-03-12',
+      joinedAt: addDays(today, -60),
     },
     {
       id: 'marina',
@@ -121,6 +129,10 @@ export function createDemo() {
       initial: { belt: 'branca', degrees: 3 },
       events: [],
       kinds: {},
+      avatarPath: null,
+      contact: null,
+      birthDate: '2001-11-02',
+      joinedAt: addDays(today, -45),
     },
     {
       id: 'pedro',
@@ -130,6 +142,10 @@ export function createDemo() {
       initial: null,
       events: [],
       kinds: {},
+      avatarPath: null,
+      contact: null,
+      birthDate: null,
+      joinedAt: addDays(today, -30),
     },
     {
       id: 'ana',
@@ -139,6 +155,10 @@ export function createDemo() {
       initial: null,
       events: [],
       kinds: {},
+      avatarPath: null,
+      contact: null,
+      birthDate: null,
+      joinedAt: today,
     },
   ]
   const past = sessions.filter((s) => new Date(s.startsAt).getTime() < Date.now())
@@ -238,6 +258,16 @@ export function createDemo() {
       ...countPresences(presences, s.id, s.events),
       today,
       initialSet: !!s.initial || s.events.length > 0,
+      held: sessions.filter(
+        (x) =>
+          x.status !== 'cancelada' &&
+          new Date(x.startsAt).getTime() <= Date.now() &&
+          localDate(x.startsAt) >= s.joinedAt,
+      ).length,
+      avatarPath: s.avatarPath,
+      contact: s.contact,
+      birthDate: s.birthDate,
+      joinedAt: s.joinedAt,
       attendances: presences
         .filter((p) => p.studentId === s.id)
         .map((p) => {
@@ -285,6 +315,18 @@ export function createDemo() {
       if (url) URL.revokeObjectURL(url)
       files.delete(path)
     },
+  }
+  // Um treino antigo (pelo menos 8 dias atrás) já vem com foto: a aba Treinar
+  // do aluno mostra o "Último treino" com imagem desde a primeira visita. Longe
+  // do dia mais recente, para não interferir nos testes do calendário.
+  const diaFoto = [...past].reverse().find((s) => localDate(s.startsAt) <= addDays(today, -8))
+  if (diaFoto) {
+    const path = `teams/${TEAM}/sessions/${diaFoto.id}/fotos/demo.png`
+    files.set(
+      path,
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    )
+    photos.push({ id: 'demo-foto-ultimo', sessionId: diaFoto.id!, path, caption: null })
   }
   const handlers: Record<string, (a: Record<string, any>) => unknown> = {
     today_sp: () => today,
@@ -413,6 +455,14 @@ export function createDemo() {
       sessions = sessions.map((s) => (s.id === c.id ? c : s))
       presences = presences.filter((p) => !(p.sessionId === c.id && p.status === 'pendente'))
     },
+    delete_session: (a) => {
+      const s = session(a.p_session)
+      const paths = photos.filter((p) => p.sessionId === s.id).map((p) => p.path)
+      sessions = sessions.filter((x) => x.id !== s.id)
+      presences = presences.filter((p) => p.sessionId !== s.id)
+      photos = photos.filter((p) => p.sessionId !== s.id)
+      return paths
+    },
     create_session: (a) => {
       const id = newId('avulsa')
       const startsAt = new Date(a.p_starts_at).toISOString()
@@ -531,6 +581,7 @@ export function createDemo() {
           { id: prof.id, role: 'professor' },
           a.p_belt,
           a.p_degrees,
+          a.p_note ?? null,
         ),
         { revision: s.revision + 1 },
       )
@@ -543,6 +594,7 @@ export function createDemo() {
         a.p_kind,
         today,
         a.p_key,
+        a.p_note ?? null,
       )
       s.kinds[a.p_key] = a.p_kind
       Object.assign(s, { events: next.events, revision: s.revision + 1 })
@@ -553,6 +605,29 @@ export function createDemo() {
         events: undoLast({ ...s, attendances: [] }, { id: prof.id, role: 'professor' }).events,
         revision: s.revision + 1,
       })
+    },
+    update_my_profile: (a) => {
+      const contato = String(a.p_contact ?? '').trim()
+      if (contato.length > 120) throw new Error('O contato deve ter até 120 caracteres.')
+      const nasc = a.p_birth_date ?? null
+      if (nasc && nasc > today) throw new Error('Data de nascimento inválida.')
+      const me = role === 'aluno' ? student('lucas') : null
+      if (!me) throw new Error('Somente alunos editam o próprio perfil na demonstração.')
+      me.contact = contato || null
+      me.birthDate = nasc
+    },
+    set_avatar: (a) => {
+      const me = role === 'aluno' ? student('lucas') : null
+      if (!me) throw new Error('Somente alunos editam o próprio perfil na demonstração.')
+      const old = me.avatarPath
+      me.avatarPath = a.p_path ?? null
+      return old
+    },
+    set_student_status: (a) => {
+      const s = student(a.p_user)
+      if (s.memberStatus !== 'ativo' && s.memberStatus !== 'inativo')
+        throw new Error('Aluno não encontrado.')
+      s.memberStatus = a.p_status
     },
   }
   return {
