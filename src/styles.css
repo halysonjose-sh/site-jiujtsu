@@ -578,7 +578,7 @@ dialog p {
   justify-content: center;
   border-radius: 50%;
   background: color-mix(in srgb, var(--green) 9%, #fff);
-  color: color-mix(in srgb, var(--green) 75%, #fff);
+  color: var(--green);
   font-size: 12px;
   font-weight: 700;
   flex-shrink: 0;

@@ -409,7 +409,6 @@ describe('graduação continua protegida', () => {
       asUser(teacher, "select public.graduate_student($1,'grau',gen_random_uuid(),$2)", [a, rev]),
     ).rejects.toThrow(/atualiz/)
     let d = await one(a, 'select public.student_detail($1)', [a])
-    console.log('DEBUG', JSON.stringify({ events: d.events, att: d.attendances.map((x: any) => x.date), today: d.today, held: d.held, joinedAt: d.joinedAt }))
     expect([d.belt, d.degrees, d.cycle]).toEqual(['azul', 3, 0])
     await asUser(teacher, 'select public.undo_graduation($1,$2,$3)', [a, key, d.revision])
     d = await one(a, 'select public.student_detail($1)', [a])
@@ -681,9 +680,19 @@ describe('perfil do aluno: contato, nascimento, avatar e status inativo', () => 
     ).rows[0].id
     const path = `avatars/${team}/${novo}/11111111-2222-3333-4444-555555555555.jpg`
     expect(await one(novo, 'select public.set_avatar($1)', [path])).toBeNull()
-    expect(await one(novo, 'select public.set_avatar($1)', [path + '.png'])).toBe(path)
+    expect(
+      await one(novo, 'select public.set_avatar($1)', [
+        `avatars/${team}/${novo}/22222222-3333-4444-5555-666666666666.png`,
+      ]),
+    ).toBe(path)
     await expect(
       asUser(novo, 'select public.set_avatar($1)', [`avatars/${team}/${outroAluno}/x.jpg`]),
+    ).rejects.toThrow()
+    // subpasta de outro aluno, mesmo com nome de arquivo válido, é recusada
+    await expect(
+      asUser(novo, 'select public.set_avatar($1)', [
+        `avatars/${team}/${outroAluno}/33333333-4444-4555-8666-777777777777.jpg`,
+      ]),
     ).rejects.toThrow(/inválido/)
     await expect(asUser(novo, 'select public.set_avatar($1)', ['/etc/passwd'])).rejects.toThrow()
   })
