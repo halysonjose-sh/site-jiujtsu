@@ -507,8 +507,17 @@ dialog p {
 .app-shell:has(.demo-banner) .sidebar {
   top: 38px;
 }
+/* Dentro da sidebar a marca acompanha a escala do destaque, não a cor principal:
+   com destaque escuro o --green afundaria no fundo. */
 .sidebar > .brand {
   margin-bottom: 60px;
+  color: var(--side-text, inherit);
+}
+.sidebar > .brand .brand-mark {
+  color: var(--side-text, var(--green));
+}
+.sidebar > .brand .brand-dot {
+  color: var(--side-text, var(--accent));
 }
 .sidebar-label {
   font-size: 10px;
@@ -560,15 +569,26 @@ dialog p {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  color: var(--side-text, inherit);
 }
 .profile-mini > div > span {
   display: block;
   font-size: 11px;
-  color: var(--muted);
+  color: var(--side-weak, var(--muted));
 }
 .profile-mini .icon-button {
   width: 26px;
   min-height: 40px;
+  color: var(--side-weak, var(--muted));
+}
+.profile-mini .icon-button:hover {
+  background: var(--side-hover-bg, color-mix(in srgb, var(--green) 9%, #fff));
+}
+.sidebar .install-button {
+  color: var(--side-weak, var(--muted));
+}
+.sidebar .install-button:hover {
+  background: var(--side-hover-bg, transparent);
 }
 .avatar {
   width: 36px;
@@ -1196,6 +1216,34 @@ dialog p {
 }
 .settings-card .primary {
   margin-top: 10px;
+}
+.staff-list {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.staff-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fffefa;
+  font-size: 15px;
+}
+.profile-edit .sheet-section {
+  margin-top: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 .offline-screen,
 .loading-screen {

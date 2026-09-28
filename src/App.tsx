@@ -642,6 +642,7 @@ function StudentSummary({
   uploadAvatarFile,
   teamId,
   onChanged,
+  account,
 }: {
   student: StudentView
   goal: number | null
@@ -652,6 +653,7 @@ function StudentSummary({
   uploadAvatarFile?: AvatarUpload
   teamId?: string
   onChanged?: () => void
+  account?: { email: string; changeEmail: (v: string) => Promise<void>; changePassword: (v: string) => Promise<void> }
 }) {
   const p = progress(s.cycle, goal)
   const freq = frequencyRate(s.total, s.held)
@@ -661,9 +663,12 @@ function StudentSummary({
   )
   const toast = useToast()
   const [edit, setEdit] = useState(false),
+    [nome, setNome] = useState(s.name),
     [contact, setContact] = useState(s.contact ?? ''),
     [birth, setBirth] = useState(s.birthDate ?? ''),
-    [foto, setFoto] = useState<File | null>(null)
+    [foto, setFoto] = useState<File | null>(null),
+    [novoEmail, setNovoEmail] = useState(''),
+    [novaSenha, setNovaSenha] = useState('')
   const podeEditar = !teacher && !!call && !!mutate && !!uploadAvatarFile && !!teamId
   const escolherFoto = async (file: File | null) => {
     if (!file || !uploadAvatarFile || !teamId) return
@@ -698,7 +703,19 @@ function StudentSummary({
           {s.memberStatus === 'inativo' && <span className="status-pill">Inativo</span>}
         </div>
         {podeEditar && (
-          <button className="secondary edit-profile" type="button" onClick={() => setEdit(true)}>
+          <button
+            className="secondary edit-profile"
+            type="button"
+            onClick={() => {
+              // Reabre com os dados atuais: um refresh em segundo plano pode ter mudado o perfil.
+              setNome(s.name)
+              setContact(s.contact ?? '')
+              setBirth(s.birthDate ?? '')
+              setNovoEmail('')
+              setNovaSenha('')
+              setEdit(true)
+            }}
+          >
             <Camera size={16} /> Editar perfil
           </button>
         )}
@@ -719,6 +736,13 @@ function StudentSummary({
               />
             </Field>
             {foto && <p className="field-help">A foto é enviada assim que escolhida.</p>}
+            <Field label="Nome">
+              <input
+                value={nome}
+                maxLength={80}
+                onChange={(e) => setNome(e.target.value)}
+              />
+            </Field>
             <Field label="Contato (telefone ou e-mail)">
               <input
                 value={contact}
@@ -738,6 +762,7 @@ function StudentSummary({
               className="primary"
               action={async () => {
                 await mutate!('update_my_profile', {
+                  p_name: nome,
                   p_contact: contact,
                   p_birth_date: birth || null,
                 })
@@ -748,6 +773,54 @@ function StudentSummary({
             >
               Salvar perfil
             </ActionButton>
+            {account && (
+              <>
+                <h4 className="sheet-section">Conta</h4>
+                <p className="field-help">
+                  E-mail atual: {account.email}
+                </p>
+                <Field label="Novo e-mail">
+                  <input
+                    type="email"
+                    value={novoEmail}
+                    autoComplete="email"
+                    onChange={(e) => setNovoEmail(e.target.value)}
+                  />
+                </Field>
+                <ActionButton
+                  className="secondary"
+                  action={async () => {
+                    const v = novoEmail.trim()
+                    if (!v || !v.includes('@')) throw new Error('Informe um e-mail válido.')
+                    await account.changeEmail(v)
+                    setNovoEmail('')
+                  }}
+                  success="Enviamos uma confirmação para o novo e-mail. Confirme lá para valer."
+                >
+                  Alterar e-mail
+                </ActionButton>
+                <Field label="Nova senha">
+                  <input
+                    type="password"
+                    value={novaSenha}
+                    autoComplete="new-password"
+                    minLength={6}
+                    onChange={(e) => setNovaSenha(e.target.value)}
+                  />
+                </Field>
+                <ActionButton
+                  className="secondary"
+                  action={async () => {
+                    if (novaSenha.length < 6) throw new Error('A senha deve ter pelo menos 6 caracteres.')
+                    await account.changePassword(novaSenha)
+                    setNovaSenha('')
+                  }}
+                  success="Senha alterada."
+                >
+                  Alterar senha
+                </ActionButton>
+              </>
+            )}
           </div>
         </BottomSheet>
       )}
@@ -998,7 +1071,7 @@ function History({
     </section>
   )
 }
-function TeacherActions({ s, mutate }: { s: StudentView; mutate: Mutate }) {
+function TeacherActions({ s, mutate, owner }: { s: StudentView; mutate: Mutate; owner: boolean }) {
   const [belt, setBelt] = useState<Belt>('branca'),
     [degrees, setDegrees] = useState(0),
     [note, setNote] = useState(''),
@@ -1132,6 +1205,16 @@ function TeacherActions({ s, mutate }: { s: StudentView; mutate: Mutate }) {
                 }
               >
                 Desfazer última graduação
+              </ActionButton>
+            )}
+            {owner && s.role === 'aluno' && (
+              <ActionButton
+                className="text-button"
+                confirm={`Tornar ${s.name} professor? Ele passa a ver a agenda, lançar presenças e publicar avisos.`}
+                success={`${s.name} agora é professor.`}
+                action={() => mutate('set_member_role', { p_user: s.id, p_role: 'professor' })}
+              >
+                Tornar professor
               </ActionButton>
             )}
             {s.memberStatus === 'ativo' ? (
@@ -1346,6 +1429,68 @@ function Notifications({ demo }: { demo: boolean }) {
     </div>
   )
 }
+type StaffMember = { id: string; name: string; role: string }
+
+/** Equipe técnica da turma: o dono promove professor na aba Alunos e rebaixa aqui. */
+function StaffSection({ call, mutate }: { call: Call; mutate: Mutate }) {
+  const [staff, setStaff] = useState<StaffMember[] | null>(null)
+  const [erro, setErro] = useState('')
+  const load = useCallback(() => {
+    call<StaffMember[]>('list_staff')
+      .then((s) => {
+        setErro('')
+        setStaff(s)
+      })
+      .catch(() => {
+        setStaff([])
+        setErro('Não foi possível carregar a equipe técnica.')
+      })
+  }, [call])
+  useEffect(() => {
+    load()
+  }, [load])
+  return (
+    <section className="settings-card">
+      <h2>Professores da equipe.</h2>
+      <p className="muted">
+        Para ter um professor: a pessoa cria a conta com o código da equipe e você a promove na aba
+        Alunos; aqui você pode rebaixar.
+      </p>
+      {erro && (
+        <p className="error-message" role="alert">
+          {erro}
+        </p>
+      )}
+      {staff === null ? (
+        <p className="muted">Carregando…</p>
+      ) : (
+        <ul className="staff-list">
+          {staff.map((m) => (
+            <li key={m.id}>
+              <span>{m.name}</span>
+              {m.role === 'dono' ? (
+                <span className="muted">Dono da equipe</span>
+              ) : (
+                <ActionButton
+                  className="text-button danger"
+                  confirm={`Voltar ${m.name} para aluno? Ele perde o acesso de professor.`}
+                  success={`${m.name} voltou para aluno.`}
+                  action={async () => {
+                    await mutate('set_member_role', { p_user: m.id, p_role: 'aluno' })
+                    load()
+                  }}
+                >
+                  Voltar para aluno
+                </ActionButton>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
 function Settings({
   goal,
   mutate,
@@ -1355,6 +1500,7 @@ function Settings({
   demo,
   today,
   onChanged,
+  onPreview,
   sair,
 }: {
   goal: number | null
@@ -1365,6 +1511,7 @@ function Settings({
   demo: boolean
   today: string
   onChanged: () => Promise<void>
+  onPreview: (cores: { p: string; a: string } | null) => void
   sair: () => Promise<void>
 }) {
   const [value, setValue] = useState(goal?.toString() ?? ''),
@@ -1372,24 +1519,20 @@ function Settings({
     [primary, setPrimary] = useState(team?.primaryColor ?? '#234c3a'),
     [accent, setAccent] = useState(team?.accentColor ?? '#cee68b'),
     [logoError, setLogoError] = useState('')
-  // Pré-visualização ao vivo: o app inteiro reage enquanto o dono escolhe a cor.
-  const preview = (p: string, a: string) => aplicarVisual(document.documentElement.style, p, a)
+  // Pré-visualização ao vivo: o App aplica as cores escolhidas; ao desmontar
+  // (salvar ou sair da página) o preview é limpo e o visual salvo volta a valer.
   useEffect(() => {
-    const root = document.documentElement.style
-    return () => {
-      // Desmontagem sem salvar: restaura o visual que estava salvo.
-      if (team) aplicarVisual(root, team.primaryColor, team.accentColor)
-      else limparVisual(root)
-    }
-    // Executa só na desmontagem; team aqui é o visual salvo no momento da abertura.
+    return () => onPreview(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+  const preview = (p: string, a: string) => onPreview({ p, a })
   const valid =
     value === '' ||
     (Number.isInteger(Number(value)) && Number(value) > 0 && Number(value) <= 2147483647)
   return (
     <>
       <JoinCode call={call} owner={owner} teamName={team?.name ?? 'da equipe'} />
+      {owner && <StaffSection call={call} mutate={mutate} />}
       <section className="settings-card">
         <h2>Do jeito da sua equipe.</h2>
         <p className="muted">Uma referência para acompanhar a constância dos alunos.</p>
@@ -1531,6 +1674,7 @@ function Settings({
 }
 export default function App() {
   const [userId, setUserId] = useState<string | null>(null),
+    [userEmail, setUserEmail] = useState(''),
     [demo, setDemo] = useState<ReturnType<typeof createDemo> | null>(null),
     [demoRole, setDemoRole] = useState<'aluno' | 'professor'>('aluno'),
     [data, setData] = useState<Dashboard | null>(null),
@@ -1542,7 +1686,9 @@ export default function App() {
     [selected, setSelected] = useState<string | null>(null),
     [search, setSearch] = useState(''),
     [reviewsToday, setReviewsToday] = useState(0),
-    [jump, setJump] = useState<{ id: string; nonce: number } | null>(null)
+    [jump, setJump] = useState<{ id: string; nonce: number } | null>(null),
+    // Pré-visualização do editor de visual: cores aplicadas antes de salvar.
+    [preview, setPreview] = useState<{ p: string; a: string } | null>(null)
   const generation = useRef(0)
   const online = useConnection()
   useEffect(() => {
@@ -1551,6 +1697,7 @@ export default function App() {
     supabase.auth.getSession().then(({ data, error }) => {
       if (alive) {
         setUserId(data.session?.user.id ?? null)
+        setUserEmail(data.session?.user.email ?? '')
         setAuthReady(true)
         if (error) setError(friendlyError(error))
       }
@@ -1560,6 +1707,7 @@ export default function App() {
     } = supabase.auth.onAuthStateChange((event, session) => {
       generation.current++
       setUserId(session?.user.id ?? null)
+      setUserEmail(session?.user.email ?? '')
       setAuthReady(true)
       if (event === 'PASSWORD_RECOVERY') setRecovery(true)
       if (!session) {
@@ -1615,20 +1763,45 @@ export default function App() {
     await call(name, args)
     await refresh()
   }
+  // Conta (e-mail e senha) é do Supabase Auth; na demonstração, simula sucesso.
+  const account = demo
+    ? { email: 'lucas@tatame.demo', changeEmail: async () => {}, changePassword: async () => {} }
+    : userId && supabase
+      ? (() => {
+          const sb = supabase
+          return {
+            email: userEmail,
+            changeEmail: async (v: string) => {
+              const { error } = await sb.auth.updateUser({ email: v })
+              if (error) throw new Error(friendlyError(error))
+            },
+            changePassword: async (v: string) => {
+              const { error } = await sb.auth.updateUser({ password: v })
+              if (error) throw new Error(friendlyError(error))
+            },
+          }
+        })()
+      : undefined
   const team = data?.team
   useEffect(() => {
     const root = document.documentElement.style
-    if (team) {
-      aplicarVisual(root, team.primaryColor, team.accentColor)
-      // Barra do navegador e título da aba acompanham o visual da equipe.
-      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', team.primaryColor)
-      document.title = `${team.name} · Tatame`
+    // Enquanto o dono escolhe cores, o preview vence o visual salvo — assim um
+    // refresh em segundo plano não apaga a edição no meio.
+    const cores = preview ?? (team ? { p: team.primaryColor, a: team.accentColor } : null)
+    if (cores) {
+      aplicarVisual(root, cores.p, cores.a)
     } else {
       limparVisual(root)
+    }
+    if (team) {
+      // Barra do navegador e título da aba acompanham o visual da equipe.
+      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', cores?.p ?? team.primaryColor)
+      document.title = `${team.name} · Tatame`
+    } else {
       document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#234c3a')
       document.title = 'Tatame · Minha equipe'
     }
-  }, [team])
+  }, [team, preview])
   async function logout() {
     if (supabase && !demo) {
       const { error } = await supabase.auth.signOut({ scope: 'local' })
@@ -1890,6 +2063,7 @@ export default function App() {
               demo={!!demo}
               today={data.today}
               onChanged={refresh}
+              onPreview={setPreview}
               sair={logout}
             />
           ) : page === 'agenda' ? (
@@ -2016,7 +2190,12 @@ export default function App() {
                     collapsed
                   />
                 </div>
-                <TeacherActions key={student.id} s={student} mutate={mutate} />
+                <TeacherActions
+                  key={student.id}
+                  s={student}
+                  mutate={mutate}
+                  owner={data.profile.role === 'dono'}
+                />
               </div>
             ) : page === 'overview' ? (
               <>
@@ -2041,6 +2220,7 @@ export default function App() {
                   uploadAvatarFile={uploadAvatarFile}
                   teamId={data.team?.id ?? ''}
                   onChanged={refresh}
+                  account={account}
                 />
                 <History key={student.id} s={student} teacher={false} mutate={mutate} call={call} />
                 <ActionButton className="secondary" action={logout}>

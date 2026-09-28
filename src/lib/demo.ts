@@ -169,7 +169,9 @@ export function createDemo() {
       ['marina', 1],
       ['pedro', 3],
     ] as const)
-      if (i % every === 0)
+      // Ninguém tem presença antes de entrar na equipe: presenças ≤ aulas
+      // realizadas desde a entrada (o invariante da tela de perfil).
+      if (i % every === 0 && localDate(s.startsAt) >= students.find((x) => x.id === id)!.joinedAt)
         presences.push({
           sessionId: s.id!,
           studentId: id,
@@ -250,6 +252,8 @@ export function createDemo() {
     if (!s) throw new Error('Aula não encontrada.')
     return s
   }
+  // Papel de cada membro na equipe (o resto é aluno). O dono promove/rebaixa.
+  let roles: Record<string, 'aluno' | 'professor'> = {}
   const student = (id: unknown) => {
     const s = students.find((x) => x.id === id)
     if (!s) throw new Error('Aluno não encontrado.')
@@ -260,7 +264,7 @@ export function createDemo() {
     return {
       id: s.id,
       name: s.name,
-      role: 'aluno',
+      role: roles[s.id] ?? 'aluno',
       memberStatus: s.memberStatus,
       revision: s.revision,
       belt: rank.belt,
@@ -645,8 +649,12 @@ export function createDemo() {
       if (contato.length > 120) throw new Error('O contato deve ter até 120 caracteres.')
       const nasc = a.p_birth_date ?? null
       if (nasc && nasc > today) throw new Error('Data de nascimento inválida.')
+      const nome = a.p_name == null ? null : String(a.p_name).trim()
+      if (nome != null && (nome.length < 2 || nome.length > 80))
+        throw new Error('O nome deve ter entre 2 e 80 caracteres.')
       const me = role === 'aluno' ? student('lucas') : null
       if (!me) throw new Error('Somente alunos editam o próprio perfil na demonstração.')
+      if (nome) me.name = nome
       me.contact = contato || null
       me.birthDate = nasc
     },
@@ -663,6 +671,22 @@ export function createDemo() {
         throw new Error('Aluno não encontrado.')
       s.memberStatus = a.p_status
     },
+    set_member_role: (a) => {
+      if (role !== 'professor') throw new Error('Somente o dono altera papéis.')
+      if (a.p_user === prof.id) throw new Error('Você não pode alterar o próprio papel.')
+      const papel = a.p_role
+      if (papel !== 'aluno' && papel !== 'professor') throw new Error('Papel inválido.')
+      const s = student(a.p_user)
+      roles[s.id] = papel
+      // Espelha o SQL: promover reativa o membro; rebaixar também.
+      if (s.memberStatus === 'pendente') s.memberStatus = 'ativo'
+    },
+    list_staff: () => [
+      { id: prof.id, name: professor.name, role: 'dono' },
+      ...students
+        .filter((s) => roles[s.id] === 'professor')
+        .map((s) => ({ id: s.id, name: s.name, role: 'professor' })),
+    ],
     update_session: (a) => {
       if (role !== 'professor') throw new Error('Somente o professor edita aulas.')
       const s = session(a.p_id)
@@ -710,14 +734,16 @@ export function createDemo() {
       const me =
         as === 'professor'
           ? professor
-          : { id: 'lucas', name: 'Lucas Almeida', role: 'aluno' as const, revision: 0 }
+          : { id: 'lucas', name: student('lucas').name, role: 'aluno' as const, revision: 0 }
       return {
         profile: me,
         team,
         status: 'ativo',
-        students: (as === 'professor' ? students : students.filter((s) => s.id === 'lucas')).map(
-          view,
-        ),
+        students: (
+          as === 'professor'
+            ? students.filter((s) => (roles[s.id] ?? 'aluno') === 'aluno')
+            : students.filter((s) => s.id === 'lucas')
+        ).map(view),
         goal,
         today,
       }

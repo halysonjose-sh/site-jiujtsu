@@ -655,24 +655,53 @@ describe('código de acesso visível para professores', () => {
 })
 
 describe('perfil do aluno: contato, nascimento, avatar e status inativo', () => {
-  it('aluno edita o próprio contato e nascimento; professor vê no detalhe', async () => {
-    await asUser(novo, "select public.update_my_profile('(11) 91234-5678','1998-05-20')")
+  it('aluno edita o próprio nome, contato e nascimento; professor vê no detalhe', async () => {
+    await asUser(novo, "select public.update_my_profile('Novo Nome','(11) 91234-5678','1998-05-20')")
     const d = await one(teacher, 'select public.student_detail($1)', [novo])
+    expect(d.name).toBe('Novo Nome')
     expect(d.contact).toBe('(11) 91234-5678')
     expect(d.birthDate).toBe('1998-05-20')
     expect(typeof d.held).toBe('number')
     expect(d.joinedAt).toBeTruthy()
     await expect(
-      asUser(novo, "select public.update_my_profile('x','1998-05-20')", []),
+      asUser(novo, "select public.update_my_profile(null,'x','1998-05-20')", []),
     ).resolves.toBeTruthy()
+    expect((await one(novo, 'select public.student_detail($1)', [novo])).name).toBe('Novo Nome')
   })
-  it('valida contato longo e nascimento futuro', async () => {
+  it('valida nome curto, contato longo e nascimento futuro', async () => {
     await expect(
-      asUser(novo, 'select public.update_my_profile($1,null)', ['x'.repeat(121)]),
+      asUser(novo, "select public.update_my_profile('A',null,null)"),
+    ).rejects.toThrow(/2 e 80/)
+    await expect(
+      asUser(novo, 'select public.update_my_profile(null,$1,null)', ['x'.repeat(121)]),
     ).rejects.toThrow(/120/)
     await expect(
-      asUser(novo, 'select public.update_my_profile(null,public.today_sp()+1)'),
+      asUser(novo, 'select public.update_my_profile(null,null,public.today_sp()+1)'),
     ).rejects.toThrow()
+  })
+  it('dono promove aluno a professor e lista a equipe técnica; guarda de papel vale', async () => {
+    const staffRows = () => asUser(teacher, 'select * from public.list_staff()').then((r) => r.rows)
+    // o dono está na lista; o aluno comum não
+    expect((await staffRows()).some((m: any) => m.role === 'dono')).toBe(true)
+    expect((await staffRows()).some((m: any) => m.id === novo)).toBe(false)
+    // aluno não altera papéis
+    await expect(
+      asUser(novo, 'select public.set_member_role($1,$2)', [novo, 'professor']),
+    ).rejects.toThrow()
+    // dono promove; promovido aparece no staff e sai da lista de alunos
+    await asUser(teacher, 'select public.set_member_role($1,$2)', [novo, 'professor'])
+    expect((await staffRows()).some((m: any) => m.id === novo && m.role === 'professor')).toBe(true)
+    const alunos = await one(teacher, 'select public.list_students()')
+    expect(alunos.some((s: any) => s.id === novo)).toBe(false)
+    // dono não altera o próprio papel nem um dono
+    await expect(
+      asUser(teacher, 'select public.set_member_role($1,$2)', [teacher, 'aluno']),
+    ).rejects.toThrow(/próprio/)
+    // rebaixa de volta
+    await asUser(teacher, 'select public.set_member_role($1,$2)', [novo, 'aluno'])
+    expect(
+      (await one(teacher, 'select public.list_students()')).some((s: any) => s.id === novo),
+    ).toBe(true)
   })
   it('avatar: caminho válido grava e devolve o antigo; caminho inválido é recusado', async () => {
     const team = (

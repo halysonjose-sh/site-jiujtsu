@@ -95,6 +95,13 @@ describe('escalaSidebar', () => {
     const esc = escalaSidebar('#7a8b6f')!
     expect(contrastRatio(esc.texto, '#7a8b6f')!).toBeGreaterThanOrEqual(4.5)
   })
+  it('destaque de tom médio mantém o item ativo AA (realce reduz a mistura)', () => {
+    for (const accent of ['#7a8b6f', '#808080', '#6f7f6a']) {
+      const esc = escalaSidebar(accent)!
+      expect(contrastRatio(esc.ativoTexto, esc.ativoBg)!).toBeGreaterThanOrEqual(4.5)
+      expect(contrastRatio(esc.texto, esc.hoverBg)!).toBeGreaterThanOrEqual(4.5)
+    }
+  })
   it('hover e ativo diferem do fundo', () => {
     const esc = escalaSidebar('#cee68b')!
     expect(esc.hoverBg.toLowerCase()).not.toBe('#cee68b')

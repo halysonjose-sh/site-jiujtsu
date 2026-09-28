@@ -101,10 +101,24 @@ export function escalaSidebar(accent: string): EscalaSidebar | null {
   const fraco =
     primeiraLegivel(accent, [mixHex(texto, accent, 0.35) ?? texto, texto]) ?? texto
   // Realce do item ativo: o próprio texto misturado ao fundo mantém o matiz
-  // da equipe e garante contraste próximo ao do par original.
-  const ativoBg = mixHex(accent, texto, 0.14) ?? accent
-  const ativoTexto =
-    primeiraLegivel(ativoBg, [texto]) ?? texto
-  const hoverBg = mixHex(accent, texto, 0.08) ?? accent
+  // da equipe. A mistura é reduzida até o texto continuar AA sobre o realce —
+  // em destaque de tom médio, 14% derruba o par abaixo de 4.5:1.
+  let ativoBg = accent
+  for (const peso of [0.14, 0.1, 0.06]) {
+    const candidato = mixHex(accent, texto, peso) ?? accent
+    if ((contrastRatio(candidato, texto) ?? 0) >= MINIMO) {
+      ativoBg = candidato
+      break
+    }
+  }
+  const ativoTexto = texto
+  let hoverBg = accent
+  for (const peso of [0.08, 0.05]) {
+    const candidato = mixHex(accent, texto, peso) ?? accent
+    if ((contrastRatio(candidato, texto) ?? 0) >= MINIMO) {
+      hoverBg = candidato
+      break
+    }
+  }
   return { texto, fraco, hoverBg, ativoBg, ativoTexto }
 }
