@@ -48,6 +48,7 @@ import {
   type Dashboard,
   type StudentView,
   type Team,
+  type Announcement,
 } from './lib/api'
 import { Agenda, dayLabel, presenceLabel, Schedules, timeLabel } from './components/Classes'
 import { TrainTab } from './components/StudentTrain'
@@ -273,6 +274,99 @@ function Install() {
     </>
   )
 }
+/** Mural de avisos da equipe: professor publica e apaga; todos leem. */
+function Avisos({ call, staff }: { call: Call; staff: boolean }) {
+  const [itens, setItens] = useState<Announcement[] | null>(null)
+  const [texto, setTexto] = useState('')
+  const [erro, setErro] = useState('')
+  const [pending, setPending] = useState(false)
+  const load = useCallback(() => {
+    call<Announcement[]>('list_announcements')
+      .then(setItens)
+      .catch(() => {
+        setItens([])
+        setErro('Não foi possível carregar os avisos. Verifique sua conexão.')
+      })
+  }, [call])
+  useEffect(load, [load])
+  async function publicar(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    if (pending) return
+    setErro('')
+    setPending(true)
+    try {
+      await call('create_announcement', { p_body: texto.trim() })
+      setTexto('')
+      load()
+    } catch (err) {
+      setErro(friendlyError(err))
+    } finally {
+      setPending(false)
+    }
+  }
+  async function apagar(id: string) {
+    setErro('')
+    try {
+      await call('delete_announcement', { p_id: id })
+      load()
+    } catch (err) {
+      setErro(friendlyError(err))
+    }
+  }
+  return (
+    <section className="announcements">
+      <div className="section-heading">
+        <h2>Avisos</h2>
+      </div>
+      {staff && (
+        <form className="announcement-form" onSubmit={publicar}>
+          <label className="sr-only" htmlFor="aviso-body">
+            Novo aviso
+          </label>
+          <textarea
+            id="aviso-body"
+            value={texto}
+            maxLength={500}
+            rows={2}
+            placeholder="Escreva um aviso para a equipe…"
+            onChange={(e) => setTexto(e.target.value)}
+          />
+          <button className="primary" disabled={pending || texto.trim().length < 2}>
+            Publicar
+          </button>
+        </form>
+      )}
+      {erro && (
+        <p className="error-message" role="alert">
+          {erro}
+        </p>
+      )}
+      {itens === null ? null : itens.length === 0 ? (
+        <p className="empty">Nenhum aviso publicado.</p>
+      ) : (
+        itens.map((n) => (
+          <article className="announcement" key={n.id}>
+            <p>{n.body}</p>
+            <footer>
+              <span>
+                {n.author_name} ·{' '}
+                {new Date(n.created_at).toLocaleDateString('pt-BR', {
+                  day: '2-digit',
+                  month: 'short',
+                })}
+              </span>
+              {staff && (
+                <button className="text-button" onClick={() => apagar(n.id)} aria-label="Apagar aviso">
+                  Apagar
+                </button>
+              )}
+            </footer>
+          </article>
+        ))
+      )}
+    </section>
+  )
+}
 function Auth({
   onDemo,
   recovery,
@@ -287,6 +381,7 @@ function Auth({
     [pending, setPending] = useState(false),
     [error, setError] = useState(''),
     [message, setMessage] = useState('')
+  const [criandoTurma, setCriandoTurma] = useState(false)
   const lock = useRef(false)
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -323,7 +418,9 @@ function Auth({
             emailRedirectTo: window.location.origin,
             data: {
               name: String(data.get('name')).trim(),
-              class_code: String(data.get('code')).trim(),
+              ...(criandoTurma
+                ? { new_team: String(data.get('new_team')).trim() }
+                : { class_code: String(data.get('code')).trim() }),
             },
           },
         })
@@ -401,7 +498,9 @@ function Auth({
             {recovery
               ? 'Escolha uma senha com pelo menos 8 caracteres.'
               : mode === 'signup'
-                ? 'Use o código recebido do seu professor.'
+                ? criandoTurma
+                  ? 'Dê um nome à sua turma; você vira o responsável.'
+                  : 'Use o código recebido do seu professor.'
                 : mode === 'forgot'
                   ? 'Enviaremos um link para o seu e-mail.'
                   : 'Entre para acompanhar seus treinos.'}
@@ -429,16 +528,42 @@ function Auth({
               </Field>
             )}
             {!recovery && mode === 'signup' && (
-              <Field label="Código da equipe">
-                <input
-                  name="code"
-                  minLength={8}
-                  maxLength={128}
-                  autoComplete="off"
-                  defaultValue={inviteCode}
-                  required
-                />
-              </Field>
+              <>
+                <div className="signup-choice" role="group" aria-label="Como entrar">
+                  <button
+                    type="button"
+                    className={!criandoTurma ? 'choice active' : 'choice'}
+                    aria-pressed={!criandoTurma}
+                    onClick={() => setCriandoTurma(false)}
+                  >
+                    Tenho um código
+                  </button>
+                  <button
+                    type="button"
+                    className={criandoTurma ? 'choice active' : 'choice'}
+                    aria-pressed={criandoTurma}
+                    onClick={() => setCriandoTurma(true)}
+                  >
+                    Criar minha turma
+                  </button>
+                </div>
+                {criandoTurma ? (
+                  <Field label="Nome da sua turma">
+                    <input name="new_team" minLength={2} maxLength={80} autoComplete="organization" required />
+                  </Field>
+                ) : (
+                  <Field label="Código da equipe">
+                    <input
+                      name="code"
+                      minLength={8}
+                      maxLength={128}
+                      autoComplete="off"
+                      defaultValue={inviteCode}
+                      required
+                    />
+                  </Field>
+                )}
+              </>
             )}
             {mode === 'login' && !recovery && (
               <button
@@ -1605,13 +1730,13 @@ export default function App() {
     ? [
         { id: 'overview', label: 'Hoje', icon: <CalendarCheck size={20} /> },
         { id: 'students', label: 'Alunos', icon: <Users size={20} /> },
-        { id: 'agenda', label: 'Calendário', icon: <CalendarClock size={20} /> },
-        { id: 'settings', label: 'Mais', icon: <Settings2 size={20} /> },
+        { id: 'agenda', label: 'Agenda', icon: <CalendarClock size={20} /> },
+        { id: 'settings', label: 'Gestão', icon: <Settings2 size={20} /> },
       ]
     : [
-        { id: 'overview', label: 'Treinar', icon: <CalendarCheck size={20} /> },
+        { id: 'overview', label: 'Início', icon: <CalendarCheck size={20} /> },
         { id: 'agenda', label: 'Treinos', icon: <CalendarClock size={20} /> },
-        { id: 'history', label: 'Eu', icon: <User size={20} /> },
+        { id: 'history', label: 'Perfil', icon: <User size={20} /> },
       ]
   function nav(next: string) {
     setPage(next)
@@ -1780,16 +1905,19 @@ export default function App() {
             />
           ) : teacher && !student ? (
             page === 'overview' ? (
-              <Today
-                call={call}
-                mutate={mutate}
-                today={data.today}
-                students={data.students}
-                roster={active.map((x) => ({ id: x.id, name: x.name }))}
-                onChanged={refresh}
-                onOpenSession={openSession}
-                onCounts={setReviewsToday}
-              />
+              <>
+                <Today
+                  call={call}
+                  mutate={mutate}
+                  today={data.today}
+                  students={data.students}
+                  roster={active.map((x) => ({ id: x.id, name: x.name }))}
+                  onChanged={refresh}
+                  onOpenSession={openSession}
+                  onCounts={setReviewsToday}
+                />
+                <Avisos call={call} staff />
+              </>
             ) : (
               <section className="student-list">
                 <div className="section-heading">
@@ -1891,13 +2019,16 @@ export default function App() {
                 <TeacherActions key={student.id} s={student} mutate={mutate} />
               </div>
             ) : page === 'overview' ? (
-              <TrainTab
-                student={student}
-                call={call}
-                photos={demo ? demo.photos : supabasePhotos}
-                onChanged={refresh}
-                onCheckin={demo ? undefined : notifyCheckin}
-              />
+              <>
+                <TrainTab
+                  student={student}
+                  call={call}
+                  photos={demo ? demo.photos : supabasePhotos}
+                  onChanged={refresh}
+                  onCheckin={demo ? undefined : notifyCheckin}
+                />
+                <Avisos call={call} staff={false} />
+              </>
             ) : (
               <div className="student-primary">
                 <StudentSummary

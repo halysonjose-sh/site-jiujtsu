@@ -94,7 +94,7 @@ test('telas do app sem rolagem lateral, alvos >= 44px e fontes >= 13px', async (
   await page.getByRole('button', { name: 'Treinos' }).first().click()
   await expect(page.getByRole('grid')).toBeVisible()
   await audit(page, 'aluno: treinos')
-  await page.getByRole('button', { name: 'Eu' }).first().click()
+  await page.getByRole('button', { name: 'Perfil' }).first().click()
   await audit(page, 'aluno: eu')
 
   // Demonstração como professor: a aba padrão agora é Hoje, onde ficam as
@@ -136,7 +136,7 @@ test('telas do app sem rolagem lateral, alvos >= 44px e fontes >= 13px', async (
   await page.getByRole('button', { name: 'Fechar' }).click()
   await page.getByRole('button', { name: 'Todos os alunos' }).click()
 
-  await page.getByRole('button', { name: 'Calendário' }).first().click()
+  await page.getByRole('button', { name: 'Agenda' }).first().click()
   await expect(page.getByRole('grid')).toBeVisible()
   await audit(page, 'professor: calendário')
 
@@ -178,8 +178,8 @@ test('telas do app sem rolagem lateral, alvos >= 44px e fontes >= 13px', async (
   await audit(page, 'professor: formulário nova aula')
   await page.getByRole('button', { name: /Voltar para o calendário/ }).click()
 
-  // Horários padrão agora moram na aba Mais.
-  await page.getByRole('button', { name: 'Mais' }).first().click()
+  // Horários padrão agora moram na aba Gestão.
+  await page.getByRole('button', { name: 'Gestão' }).first().click()
   await expect(page.getByLabel('Código da equipe')).toBeVisible()
   await page.getByRole('button', { name: 'Novo horário' }).click()
   await page.getByRole('button', { name: 'Criar horário' }).waitFor()

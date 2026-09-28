@@ -212,6 +212,21 @@ export async function rpc<T>(name: string, args?: Record<string, unknown>): Prom
 }
 export const isStaff = (role: TeamRole | undefined) => role === 'professor' || role === 'dono'
 
+/** Aviso publicado pela equipe. */
+export type Announcement = {
+  id: string
+  author_id: string
+  author_name: string
+  body: string
+  created_at: string
+}
+
+
+
+/** Edita uma aula ainda prevista: título, início e duração. */
+export const updateSession = (id: string, title: string, startsAt: string, durationMin: number) =>
+  rpc('update_session', { p_id: id, p_title: title, p_starts_at: startsAt, p_duration_min: durationMin })
+
 export async function loadDashboard(id: string): Promise<Dashboard> {
   if (!supabase) throw new Error('Equipe não conectada.')
   const { data: profile, error } = await supabase

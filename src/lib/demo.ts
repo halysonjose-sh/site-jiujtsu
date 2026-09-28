@@ -186,6 +186,11 @@ export function createDemo() {
         ? { ...s, description: 'Passagem de guarda meia-guarda e finalização do triângulo.' }
         : s,
     )
+    // Pedro não foi à aula passada mais recente: o e2e do calendário precisa de
+    // um aluno "sem check-in" para lançar presença, determinístico em qualquer dia.
+    presences = presences.filter(
+      (p) => !(p.sessionId === last.id && p.studentId === 'pedro'),
+    )
   }
   const nextClass = sessions.find((s) => new Date(s.startsAt).getTime() > Date.now() + 2 * 3600000)
   if (nextClass)
@@ -197,14 +202,19 @@ export function createDemo() {
       source: 'checkin',
     })
 
-  // Aulas avulsas de hoje: uma iniciada às 18:30 (com check-ins) e uma prevista
-  // às 20:30. Fixas para a aba Hoje e o e2e serem determinísticos em qualquer dia.
+  // Aulas avulsas de hoje: uma já iniciada (30 min atrás; nunca antes das 00:00
+  // de São Paulo) e uma prevista às 20:30. A iniciada segue o relógio para o
+  // invariante presenças ≤ aulas realizadas valer em qualquer hora do dia;
+  // o e2e da chamada fixa o relógio às 19:30, então lá ela também é determinística.
+  const iniciada = new Date(
+    Math.max(Date.now() - 30 * 60000, new Date(zonedToUtc(today, '00:00')).getTime()),
+  )
   const avulsas = withIds([
     {
       teamId: TEAM,
       scheduleId: null,
       title: 'Treino avulso',
-      startsAt: zonedToUtc(today, '18:30'),
+      startsAt: iniciada.toISOString(),
       durationMin: 90,
       status: 'prevista' as const,
     },
@@ -302,6 +312,30 @@ export function createDemo() {
   }
   let role: 'aluno' | 'professor' = 'aluno'
   let photos: { id: string; sessionId: string; path: string; caption: string | null }[] = []
+  // Avisos de exemplo: a tela nasce mostrando o funcionamento; o professor apaga quando quiser.
+  // Mesma forma do RPC list_announcements (snake_case).
+  let announcements: {
+    id: string
+    author_id: string
+    author_name: string
+    body: string
+    created_at: string
+  }[] = [
+    {
+      id: 'aviso-demo-1',
+      author_id: professor.id,
+      author_name: professor.name,
+      body: 'Exemplo: sem treino no sábado desta semana.',
+      created_at: new Date(Date.now() - 86400000).toISOString(),
+    },
+    {
+      id: 'aviso-demo-2',
+      author_id: professor.id,
+      author_name: professor.name,
+      body: 'Exemplo: tragam o kimono completo para a foto da equipe.',
+      created_at: new Date(Date.now() - 2 * 86400000).toISOString(),
+    },
+  ]
   const files = new Map<string, string>()
   const photoStore: PhotoStore = {
     async upload(path, file) {
@@ -629,6 +663,45 @@ export function createDemo() {
         throw new Error('Aluno não encontrado.')
       s.memberStatus = a.p_status
     },
+    update_session: (a) => {
+      if (role !== 'professor') throw new Error('Somente o professor edita aulas.')
+      const s = session(a.p_id)
+      if (s.status !== 'prevista') throw new Error('Só é possível editar aula prevista.')
+      const title = String(a.p_title ?? '').trim()
+      if (title.length < 2 || title.length > 80)
+        throw new Error('O título deve ter entre 2 e 80 caracteres.')
+      const dur = Number(a.p_duration_min)
+      if (!Number.isInteger(dur) || dur < 15 || dur > 300)
+        throw new Error('A duração deve ficar entre 15 e 300 minutos.')
+      const inicio = new Date(String(a.p_starts_at ?? ''))
+      if (isNaN(inicio.getTime())) throw new Error('Informe a data e o horário da aula.')
+      s.title = title
+      s.startsAt = inicio.toISOString()
+      s.durationMin = dur
+    },
+    create_announcement: (a) => {
+      if (role !== 'professor') throw new Error('Somente o professor publica avisos.')
+      const body = String(a.p_body ?? '').trim()
+      if (body.length < 2 || body.length > 500)
+        throw new Error('O aviso deve ter entre 2 e 500 caracteres.')
+      const aviso = {
+        id: crypto.randomUUID(),
+        author_id: prof.id,
+        author_name: professor.name,
+        body,
+        created_at: new Date().toISOString(),
+      }
+      announcements.unshift(aviso)
+      return aviso.id
+    },
+    delete_announcement: (a) => {
+      const i = announcements.findIndex((n) => n.id === a.p_id)
+      if (i < 0) throw new Error('Aviso não encontrado.')
+      if (role !== 'professor' && announcements[i].author_id !== prof.id)
+        throw new Error('Aviso não encontrado.')
+      announcements.splice(i, 1)
+    },
+    list_announcements: () => announcements.map((n) => ({ ...n })),
   }
   return {
     photos: photoStore,

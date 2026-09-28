@@ -726,3 +726,87 @@ describe('perfil do aluno: contato, nascimento, avatar e status inativo', () => 
     ).rejects.toThrow()
   })
 })
+
+describe('mvp: criar turma, editar aula e avisos', () => {
+  it('cadastro com new_team cria equipe, dono ativo e código de entrada', async () => {
+    await db.query(
+      'insert into auth.users(id,email,raw_user_meta_data) values ($1,$2,$3::jsonb)',
+      [id(7), id(7) + '@test.local', JSON.stringify({ name: 'Dona Ana', new_team: 'Academia Coração' })],
+    )
+    const t = await db.query<any>("select * from public.teams where name='Academia Coração'")
+    expect(t.rows).toHaveLength(1)
+    const team = t.rows[0]
+    expect(team.slug).toMatch(/^academia-cora/)
+    expect(team.join_code).toMatch(/^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/)
+    expect(team.code_hash).not.toBe('')
+    const m = await db.query<any>(
+      'select role,status from public.team_members where team_id=$1 and user_id=$2',
+      [team.id, id(7)],
+    )
+    expect([m.rows[0].role, m.rows[0].status]).toEqual(['dono', 'ativo'])
+    // outro aluno entra na equipe nova pelo código gerado
+    await db.query(
+      'insert into auth.users(id,email,raw_user_meta_data) values ($1,$2,$3::jsonb)',
+      [id(8), id(8) + '@test.local', JSON.stringify({ name: 'Aluno Zé', class_code: team.join_code })],
+    )
+    const m2 = await db.query<any>(
+      'select role,status from public.team_members where team_id=$1 and user_id=$2',
+      [team.id, id(8)],
+    )
+    expect([m2.rows[0].role, m2.rows[0].status]).toEqual(['aluno', 'pendente'])
+    // nome de turma inválido é recusado
+    await expect(
+      db.query(
+        'insert into auth.users(id,email,raw_user_meta_data) values ($1,$2,$3::jsonb)',
+        [id(9), id(9) + '@test.local', JSON.stringify({ name: 'Nome Válido', new_team: 'A' })],
+      ),
+    ).rejects.toThrow(/nome da turma/i)
+  })
+  it('professor edita aula prevista; aula realizada e aluno são recusados', async () => {
+    const s = await sessionAt('2 days')
+    await asUser(teacher, 'select public.update_session($1,$2,now()+$3::interval,$4)', [
+      s,
+      'Aula editada',
+      '3 days',
+      90,
+    ])
+    const row = await db.query<any>(
+      'select title,starts_at,duration_min from public.class_sessions where id=$1',
+      [s],
+    )
+    expect(row.rows[0].title).toBe('Aula editada')
+    expect(row.rows[0].duration_min).toBe(90)
+    await expect(
+      asUser(a, 'select public.update_session($1,$2,now()+$3::interval,$4)', [s, 'Tentativa aluno', '3 days', 60]),
+    ).rejects.toThrow()
+    const done = await sessionAt('-1 day', 'realizada')
+    await expect(
+      asUser(teacher, 'select public.update_session($1,$2,now(),60)', [done, 'Mudança tarde']),
+    ).rejects.toThrow(/prevista/)
+    await expect(
+      asUser(teacher, 'select public.update_session($1,$2,now()+$3::interval,$4)', [s, 'Aula editada', '3 days', 10]),
+    ).rejects.toThrow(/duração/i)
+  })
+  it('avisos: staff publica, equipe lê, autor ou dono apaga', async () => {
+    const avisoId = await one(
+      teacher,
+      'select public.create_announcement($1) as id',
+      ['Sem treino no sábado, campeonato na semana que vem'],
+    )
+    expect(Number(await one(a, 'select count(*) from public.announcements'))).toBe(1)
+    // aluno não publica
+    await expect(asUser(a, 'select public.create_announcement($1)', ['Tentativa do aluno'])).rejects.toThrow()
+    // aviso curto demais é recusado
+    await expect(asUser(teacher, 'select public.create_announcement($1)', ['x'])).rejects.toThrow(/2 e 500/)
+    // aluno que não é autor não apaga (security definer: a guarda está na função)
+    await expect(asUser(a, 'select public.delete_announcement($1)', [avisoId])).rejects.toThrow(/não encontrado/i)
+    expect(Number(await one(a, 'select count(*) from public.announcements'))).toBe(1)
+    // autor apaga o próprio aviso
+    await asUser(teacher, 'select public.delete_announcement($1)', [avisoId])
+    expect(Number(await one(a, 'select count(*) from public.announcements'))).toBe(0)
+    // apagar aviso inexistente falha
+    await expect(
+      asUser(teacher, 'select public.delete_announcement($1)', [avisoId]),
+    ).rejects.toThrow(/não encontrado/i)
+  })
+})

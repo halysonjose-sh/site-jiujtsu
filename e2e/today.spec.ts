@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test'
 // Aba Hoje do professor: chamada em 3 toques (Fazer chamada, linha, Salvar),
 // contador "a revisar" zerando e Desfazer do toast.
 // O relógio é fixado às 19:30 de São Paulo (= 22:30 UTC; o Brasil não observa
-// horário de verão): a avulsa de 18:30 está iniciada, a de 20:30 ainda não.
+// horário de verão): a avulsa iniciada (30 min antes) já começou, a de 20:30 ainda não.
 const hojeSp = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })
 const AGORA = new Date(`${hojeSp()}T22:30:00Z`)
 

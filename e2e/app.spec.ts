@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test'
 test('fluxo demonstrativo de presença, professor, graduação e correção', async ({ page }) => {
+  // Percursos longo demais para os 30s padrão no webkit com projetos em paralelo.
+  test.setTimeout(120_000)
   await page.goto('/')
   await page.getByRole('button', { name: 'Conhecer a demonstração' }).click()
   await expect(page.getByText('Modo demonstração')).toBeVisible()
@@ -27,7 +29,7 @@ test('fluxo demonstrativo de presença, professor, graduação e correção', as
 test('aluno: check-in em 1 toque a partir da abertura', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Conhecer a demonstração' }).click()
-  // Primeiro cartão da aba Treinar: a próxima aula com o botão grande, à vista
+  // Primeiro cartão da aba Início: a próxima aula com o botão grande, à vista
   // sem rolar — o check-in é o primeiro toque do dia.
   const hero = page.locator('.train-hero')
   await expect(hero).toBeVisible()
@@ -36,7 +38,7 @@ test('aluno: check-in em 1 toque a partir da abertura', async ({ page }) => {
   await botao.click()
   await expect(hero.getByRole('button', { name: 'Desistir' })).toBeVisible()
   // Aba Eu: graduação, contagens, histórico e sair.
-  await page.getByRole('button', { name: 'Eu' }).first().click()
+  await page.getByRole('button', { name: 'Perfil' }).first().click()
   await expect(page.getByText('SUA GRADUAÇÃO')).toBeVisible()
   await expect(page.getByText('Seu histórico')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Sair' }).last()).toBeVisible()
@@ -107,16 +109,16 @@ test('calendário: professor cria horário, descreve aula, envia foto e lança p
   await page.goto('/')
   await page.getByRole('button', { name: 'Conhecer a demonstração' }).click()
   await page.getByRole('button', { name: 'Ver como professor' }).click()
-  await page.getByRole('button', { name: 'Calendário' }).first().click()
+  await page.getByRole('button', { name: 'Agenda' }).first().click()
   await expect(page.getByRole('grid')).toBeVisible()
   await expect(page.getByRole('gridcell')).toHaveCount(42)
-  // Horários padrão ficam na aba Mais.
-  await page.getByRole('button', { name: 'Mais' }).first().click()
+  // Horários padrão ficam na aba Gestão.
+  await page.getByRole('button', { name: 'Gestão' }).first().click()
   await page.getByRole('button', { name: 'Novo horário' }).click()
   await page.getByLabel('Nome da aula').fill('Kids')
   await page.getByRole('button', { name: 'Criar horário' }).click()
   await expect(page.getByText('Kids').first()).toBeVisible()
-  await page.getByRole('button', { name: 'Calendário' }).first().click()
+  await page.getByRole('button', { name: 'Agenda' }).first().click()
   // Abre a aula mais recente que já aconteceu (dias com aula têm "aula(s)" no
   // rótulo). Espera as células com aula existirem antes de capturar os rótulos.
   const cells = page.getByRole('gridcell', { name: /aula\(s\)/ })
@@ -173,7 +175,7 @@ test('cadastro de aula: pelo botão (futura) e por um dia passado (com foto e pr
   await page.goto('/')
   await page.getByRole('button', { name: 'Conhecer a demonstração' }).click()
   await page.getByRole('button', { name: 'Ver como professor' }).click()
-  await page.getByRole('button', { name: 'Calendário' }).first().click()
+  await page.getByRole('button', { name: 'Agenda' }).first().click()
   await expect(page.getByText('Aula avulsa')).toHaveCount(0)
 
   // Validação: nome vazio e duração inválida mostram erros e não criam nada.
@@ -255,7 +257,7 @@ test('professor cria aula rápida em 2 toques pela folha "+ Aula"', async ({ pag
   await page.goto('/')
   await page.getByRole('button', { name: 'Conhecer a demonstração' }).click()
   await page.getByRole('button', { name: 'Ver como professor' }).click()
-  await page.getByRole('button', { name: 'Calendário' }).first().click()
+  await page.getByRole('button', { name: 'Agenda' }).first().click()
   await page.getByRole('button', { name: 'Nova aula', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Nova aula' })).toBeVisible()
   // Horário frequente vem dos horários padrão da equipe.
@@ -280,7 +282,7 @@ test('professor vê, copia e troca o código de acesso; link abre cadastro preen
   await page.goto('/')
   await page.getByRole('button', { name: 'Conhecer a demonstração' }).click()
   await page.getByRole('button', { name: 'Ver como professor' }).click()
-  await page.getByRole('button', { name: 'Mais' }).first().click()
+  await page.getByRole('button', { name: 'Gestão' }).first().click()
   await expect(page.getByLabel('Código da equipe')).toHaveText('TIGR-2026')
   if (clipboardPermitido) {
     // WebKit no Windows não conhece essas permissões; o resto do teste
@@ -305,7 +307,7 @@ test('visual da equipe: tema segue as cores e contraste bloqueia salvamento', as
   await page.goto('/')
   await page.getByRole('button', { name: 'Conhecer a demonstração' }).click()
   await page.getByRole('button', { name: 'Ver como professor' }).click()
-  await page.getByRole('button', { name: 'Mais' }).first().click()
+  await page.getByRole('button', { name: 'Gestão' }).first().click()
   // Título da aba e barra do navegador acompanham a equipe.
   await expect(page).toHaveTitle('Equipe Demonstração · Tatame')
   await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#234c3a')

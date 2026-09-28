@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Clock,
   NotebookPen,
+  Pencil,
   Plus,
   Trash2,
   Users,
@@ -21,6 +22,7 @@ import { BottomSheet } from './BottomSheet'
 import { compressImage } from '../lib/image'
 import {
   friendlyError,
+  updateSession,
   type Call,
   type PresenceStatus,
   type PhotoStore,
@@ -1235,6 +1237,9 @@ function SessionPanel({
     [call, id, staff],
   )
   const [reason, setReason] = useState('')
+  const [editOpen, setEditOpen] = useState(false)
+  const [editErro, setEditErro] = useState('')
+  const [editPending, setEditPending] = useState(false)
   const act = async (name: string, args: Record<string, unknown>) => {
     await call(name, { p_session: id, ...args })
     await reload()
@@ -1269,6 +1274,90 @@ function SessionPanel({
         </p>
       )}
       {s.cancelReason && <p className="muted">Motivo: {s.cancelReason}</p>}
+      {staff && s.status === 'prevista' && (
+        <>
+          {!editOpen ? (
+            <button className="text-button" onClick={() => setEditOpen(true)}>
+              <Pencil size={14} /> Editar aula
+            </button>
+          ) : (
+            <form
+              className="edit-session"
+              onSubmit={async (e) => {
+                e.preventDefault()
+                if (editPending) return
+                setEditErro('')
+                setEditPending(true)
+                const f = new FormData(e.currentTarget)
+                try {
+                  await updateSession(
+                    id,
+                    String(f.get('title')).trim(),
+                    // horário informado no fuso de São Paulo, âncora de todo o app
+                    // (TZ em Classes.tsx e today_sp no banco); SP é UTC-3 fixo desde 2019
+                    new Date(
+                      `${f.get('date')}T${f.get('time')}:00-03:00`,
+                    ).toISOString(),
+                    Number(f.get('duration')),
+                  )
+                  setEditOpen(false)
+                  await reload()
+                  await onChanged()
+                } catch (err) {
+                  setEditErro(friendlyError(err))
+                } finally {
+                  setEditPending(false)
+                }
+              }}
+            >
+              <label className="field">
+                <span>Título</span>
+                <input name="title" defaultValue={s.title} minLength={2} maxLength={80} required />
+              </label>
+              <div className="edit-session-row">
+                <label className="field">
+                  <span>Data</span>
+                  <input type="date" name="date" defaultValue={localDay(s.startsAt)} required />
+                </label>
+                <label className="field">
+                  <span>Horário</span>
+                  <input
+                    type="time"
+                    name="time"
+                    defaultValue={timeLabel(s.startsAt)}
+                    required
+                  />
+                </label>
+                <label className="field">
+                  <span>Duração (min)</span>
+                  <input
+                    type="number"
+                    name="duration"
+                    min={15}
+                    max={300}
+                    step={5}
+                    defaultValue={s.durationMin}
+                    required
+                  />
+                </label>
+              </div>
+              {editErro && (
+                <p className="error-message" role="alert">
+                  {editErro}
+                </p>
+              )}
+              <div className="edit-session-row">
+                <button className="primary" disabled={editPending}>
+                  Salvar
+                </button>
+                <button type="button" className="secondary" onClick={() => setEditOpen(false)}>
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          )}
+        </>
+      )}
       <Journal
         id={id}
         call={call}
