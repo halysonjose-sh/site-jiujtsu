@@ -97,7 +97,7 @@ export function Today({
         <div>
           <Users size={21} />
           <strong>{students.filter((s) => s.memberStatus === 'ativo').length}</strong>
-          <span>alunos na turma</span>
+          <span>alunos na equipe</span>
         </div>
         <div>
           <Check size={21} />

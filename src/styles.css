@@ -15,7 +15,7 @@
   line-height: 1.5;
   font-size: 16px;
   --green: #234c3a;
-  --muted: #6b766e;
+  --muted: #5f6b60;
   --line: #e2e5dc;
   --cream: #f6f5ef;
   --accent: #cee68b;
@@ -100,7 +100,7 @@ svg {
   font-size: 11px;
   letter-spacing: 0.16em;
   font-weight: 700;
-  color: #778473;
+  color: #5d695e;
 }
 .primary {
   background: var(--green);
@@ -513,7 +513,7 @@ dialog p {
 .sidebar-label {
   font-size: 10px;
   letter-spacing: 0.16em;
-  color: #8d9588;
+  color: #565f57;
   font-weight: 700;
   margin: 0 14px 17px;
 }
@@ -527,7 +527,7 @@ dialog p {
   justify-content: flex-start;
   background: transparent;
   border-radius: 8px;
-  color: #778172;
+  color: #4a544c;
   font-size: 14px;
   gap: 13px;
 }
@@ -610,7 +610,7 @@ dialog p {
   gap: 8px;
   align-items: center;
   font-size: 12px;
-  color: #728368;
+  color: #5d695e;
 }
 .date-chip > span {
   width: 6px;
@@ -660,7 +660,7 @@ dialog p {
   color: color-mix(in srgb, var(--green) 75%, #fff);
 }
 .rank-heading .eyebrow {
-  color: color-mix(in srgb, var(--green) 75%, #fff);
+  color: var(--muted);
 }
 .rank-name {
   display: flex;
@@ -672,7 +672,7 @@ dialog p {
   font-size: 29px;
 }
 .rank-name > span {
-  color: color-mix(in srgb, var(--green) 75%, #fff);
+  color: var(--muted);
   font-size: 12px;
   padding: 3px 9px;
   border: 1px solid color-mix(in srgb, var(--green) 30%, #fff);
@@ -738,7 +738,7 @@ dialog p {
   display: flex;
   justify-content: space-between;
   gap: 20px;
-  color: #849579;
+  color: var(--muted);
   font-size: 11px;
 }
 .rank-footer > span:last-child {
@@ -763,7 +763,7 @@ dialog p {
   display: flex;
   align-items: center;
   gap: 9px;
-  color: #6d7b65;
+  color: var(--muted);
   font-size: 13px;
 }
 .stat-card strong {
@@ -828,7 +828,7 @@ dialog p {
 }
 .goal-card .section-heading > span {
   font-size: 12px;
-  color: #74836a;
+  color: var(--muted);
 }
 .progress-track {
   height: 7px;
@@ -858,6 +858,72 @@ dialog p {
   border-radius: 12px;
   padding: 24px 26px;
 }
+/* Fase 4: cartão da próxima aula na aba Treinar — o check-in em 1 toque. */
+.train-hero {
+  background: #fffefa;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 24px 26px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+.train-hero h2 {
+  font-size: 22px;
+  margin: 0;
+}
+.train-hero p {
+  color: #5d695e;
+  font-size: 14px;
+  margin: 0 0 8px;
+}
+.train-hero .primary {
+  width: 100%;
+  justify-content: center;
+  font-size: 16px;
+  padding: 14px 18px;
+}
+/* Fase 4: último treino com foto. */
+.last-training {
+  margin-top: 30px;
+  background: #fffefa;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 24px 26px;
+}
+.last-training img {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  margin-bottom: 12px;
+  display: block;
+}
+.last-training p {
+  margin: 0;
+  font-size: 14px;
+}
+/* Fase 5: Graduar domina a tela; destrutivas ficam no "⋯". */
+.graduar-trigger {
+  width: 100%;
+  justify-content: center;
+  font-size: 16px;
+  padding: 14px 18px;
+}
+.teacher-actions-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+.history-card.collapsed {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+.history-card.collapsed .secondary {
+  font-size: 14px;
+}
 .history-card > .section-heading {
   margin-bottom: 16px;
 }
@@ -873,7 +939,7 @@ dialog p {
 .tabs button {
   border-bottom: 2px solid transparent;
   background: transparent;
-  color: #8a9581;
+  color: var(--muted);
   border-radius: 0;
   font-size: 13px;
   padding: 0 1px 10px;
@@ -942,7 +1008,7 @@ dialog p {
 .workspace-footer {
   display: flex;
   justify-content: space-between;
-  color: #9aa48f;
+  color: #5d695e;
   font-size: 10px;
   margin-top: 36px;
   gap: 20px;
@@ -982,7 +1048,7 @@ dialog p {
 }
 .teacher-overview span {
   font-size: 13px;
-  color: #738168;
+  color: var(--muted);
 }
 .student-list {
   border: 1px solid var(--line);
@@ -1061,7 +1127,7 @@ dialog p {
 .student-cycle > span {
   display: block;
   font-size: 11px;
-  color: #8a9780;
+  color: var(--muted);
 }
 .student-row > svg {
   color: #929f86;
@@ -1420,7 +1486,7 @@ dialog p {
     gap: 3px;
     padding: 5px 4px;
     background: none;
-    color: #8b9680;
+    color: #5d695e;
     flex: 1;
     min-width: var(--touch);
     min-height: 48px;
@@ -1598,6 +1664,27 @@ dialog p {
 .field-help {
   color: #63725b;
 }
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 12px;
+}
+.chip {
+  min-height: 44px;
+  padding: 8px 16px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--cream);
+  color: #263b32;
+  font-size: 14px;
+}
+.chip.on {
+  background: color-mix(in srgb, var(--green) 12%, #fff);
+  border-color: var(--green);
+  color: var(--green);
+  font-weight: 650;
+}
 .history-row > div > span,
 .student-name > span {
   color: color-mix(in srgb, var(--green) 75%, #fff);
@@ -1759,8 +1846,15 @@ dialog p {
   border: 1px solid var(--line);
   color: inherit;
 }
+.month-row {
+  display: contents;
+}
 .month-cell.out {
-  opacity: 0.4;
+  background: transparent;
+  border-color: transparent;
+}
+.month-cell.out .month-day {
+  color: #5d695e;
 }
 .month-cell.today .month-day {
   background: var(--green);

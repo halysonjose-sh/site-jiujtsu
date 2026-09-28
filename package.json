@@ -26,6 +26,7 @@
     "workbox-routing": "^7.4.1"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@electric-sql/pglite": "^0.5.8",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/vite": "^4.3.3",

@@ -14,7 +14,7 @@ export default defineConfig({
       filename: 'sw.ts',
       includeAssets: ['icon-192.png', 'icon-512.png'],
       manifest: {
-        name: 'Tatame · Minha turma',
+        name: 'Tatame · Minha equipe',
         short_name: 'Tatame',
         lang: 'pt-BR',
         start_url: '/',

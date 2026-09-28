@@ -34,7 +34,7 @@ Deno.serve(async (req) => {
   const { data: att } = await admin
     .from('attendances')
     .select(
-      'team_id, created_at, class_sessions(title, starts_at), profiles!attendances_student_id_fkey(name)',
+      'team_id, created_at, class_sessions(title, starts_at), profiles!attendances_student_id_fkey(name), teams(name)',
     )
     .eq('session_id', session)
     .eq('student_id', userData.user.id)
@@ -57,7 +57,8 @@ Deno.serve(async (req) => {
   )
   // deno-lint-ignore no-explicit-any
   const s = att.class_sessions as any,
-    p = att.profiles as any
+    p = att.profiles as any,
+    t = att.teams as any
   const hora = new Intl.DateTimeFormat('pt-BR', {
     weekday: 'short',
     day: '2-digit',
@@ -67,7 +68,7 @@ Deno.serve(async (req) => {
     timeZone: 'America/Sao_Paulo',
   }).format(new Date(s.starts_at))
   const payload = JSON.stringify({
-    title: 'Novo check-in',
+    title: `Novo check-in · ${t?.name ?? 'Tatame'}`,
     body: `${p?.name ?? 'Um aluno'} vai treinar: ${s.title} · ${hora}`,
     url: '/?pagina=agenda',
   })

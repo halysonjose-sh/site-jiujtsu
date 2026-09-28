@@ -16,6 +16,8 @@ import { ActionButton } from './ActionButton'
 import { CHECKIN_DEADLINE_MIN } from '../domain/attendance'
 import { MAX_PHOTOS, monthGrid, sessionPhotoPath, shiftMonth } from '../domain/calendar'
 import { overlapping, planNewSession } from '../domain/newSession'
+import { horariosFrequentes, type HorarioFrequente } from '../domain/quickSession'
+import { BottomSheet } from './BottomSheet'
 import { compressImage } from '../lib/image'
 import {
   friendlyError,
@@ -49,7 +51,7 @@ export const dayLabel = (iso: string) =>
 const localDay = (iso: string) =>
   new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(iso))
 const started = (s: { startsAt: string }) => new Date(s.startsAt).getTime() <= Date.now()
-const checkinOpen = (s: SessionView) =>
+export const checkinOpen = (s: SessionView) =>
   s.status === 'prevista' &&
   Date.now() <= new Date(s.startsAt).getTime() - CHECKIN_DEADLINE_MIN * 60000
 
@@ -122,11 +124,11 @@ export function UpcomingClasses({
     await onChanged()
   }
   return (
-    <Card title="Próximas aulas" aside={<CalendarClock size={19} />}>
+    <Card title="Próximos treinos" aside={<CalendarClock size={19} />}>
       {error && <p className="error-message">{error}</p>}
-      {!data && !error && <p className="muted">Carregando aulas…</p>}
+      {!data && !error && <p className="muted">Carregando treinos…</p>}
       {data && upcoming.length === 0 && (
-        <p className="empty">Nenhuma aula marcada para os próximos dias.</p>
+        <p className="empty">Nenhum treino marcado para os próximos dias.</p>
       )}
       {upcoming.slice(0, 6).map((s) => (
         <div className="history-row" key={s.id} data-testid="upcoming-class">
@@ -195,10 +197,11 @@ export function Agenda({
   /** Vem da aba Hoje ("Fotos do treino"): abre a aula uma vez, por nonce. */
   jump?: { id: string; nonce: number } | null
 }) {
-  const [month, setMonth] = useState(today.slice(0, 7)),
+    const [month, setMonth] = useState(today.slice(0, 7)),
     [day, setDay] = useState(today),
     [selected, setSelected] = useState<string | null>(null),
     [creating, setCreating] = useState<string | null>(null),
+    [quick, setQuick] = useState(false),
     [notice, setNotice] = useState('')
   const grid = monthGrid(month)
   const from = grid[0].date,
@@ -208,6 +211,8 @@ export function Agenda({
     [call, from, to],
   )
   const [covers, setCovers] = useState<Record<string, string>>({})
+  // A capa é decorativa: se falhar, tenta uma vez de novo em silêncio; sem UI de erro.
+  const [coverRetry, setCoverRetry] = useState(0)
   const dayCovers = (data ?? [])
     .filter((s) => localDay(s.startsAt) === day && s.cover)
     .map((s) => s.cover!)
@@ -217,12 +222,32 @@ export function Agenda({
     photos
       .urls(dayCovers.split('|'))
       .then((u) => setCovers((c) => ({ ...c, ...u })))
-      .catch(() => {})
-  }, [dayCovers, photos])
+      .catch(() => setCoverRetry((r) => (r < 1 ? r + 1 : r)))
+  }, [dayCovers, photos, coverRetry])
   useEffect(() => {
     if (jump) setSelected(jump.id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jump?.nonce])
+  const folhaRapida =
+    quick && !creating && !selected ? (
+      <QuickSessionSheet
+        today={today}
+        call={call}
+        existing={data ?? []}
+        onClose={() => setQuick(false)}
+        onCreated={async (id, message) => {
+          setQuick(false)
+          setNotice(message)
+          setSelected(id)
+          await reload()
+          await onChanged()
+        }}
+        onMaisOpcoes={(date) => {
+          setQuick(false)
+          setCreating(date)
+        }}
+      />
+    ) : null
   if (creating)
     return (
       <NewSessionForm
@@ -282,7 +307,7 @@ export function Agenda({
       }
     >
       {staff && (
-        <button className="primary new-session" onClick={() => setCreating(day)}>
+        <button className="primary new-session" onClick={() => setQuick(true)}>
           <Plus size={17} /> Nova aula
         </button>
       )}
@@ -316,51 +341,57 @@ export function Agenda({
       </div>
       {error && <p className="error-message">{error}</p>}
       <div className="month-grid" role="grid" aria-label={'Aulas de ' + monthName}>
-        {weekdayNames.map((n) => (
-          <span className="month-head" key={n} role="columnheader">
-            {n}
-          </span>
+        <div className="month-row" role="row">
+          {weekdayNames.map((n) => (
+            <span className="month-head" key={n} role="columnheader">
+              {n}
+            </span>
+          ))}
+        </div>
+        {Array.from({ length: grid.length / 7 }, (_, w) => (
+          <div className="month-row" role="row" key={grid[w * 7].date}>
+            {grid.slice(w * 7, w * 7 + 7).map((d) => {
+              const list = byDay.get(d.date) ?? []
+              const label = `${d.date.split('-').reverse().join('/')}: ${
+                list.length ? list.length + ' aula(s)' : 'sem aulas'
+              }`
+              return (
+                <button
+                  key={d.date}
+                  role="gridcell"
+                  aria-label={label}
+                  aria-selected={d.date === day}
+                  className={
+                    'month-cell' +
+                    (d.inMonth ? '' : ' out') +
+                    (d.date === today ? ' today' : '') +
+                    (d.date === day ? ' selected' : '')
+                  }
+                  onClick={() => {
+                    setDay(d.date)
+                    if (!d.inMonth) setMonth(d.date.slice(0, 7))
+                  }}
+                >
+                  <span className="month-day">{Number(d.date.slice(8))}</span>
+                  <span className="month-dots">
+                    {list.slice(0, 3).map((s) => (
+                      <i
+                        key={s.id}
+                        className={
+                          'dot ' +
+                          s.status +
+                          (s.mine === 'confirmada' ? ' mine' : '') +
+                          ((s.pending ?? 0) > 0 ? ' pending' : '')
+                        }
+                      />
+                    ))}
+                    {list.some((s) => s.photos > 0) && <Camera size={10} aria-hidden="true" />}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
         ))}
-        {grid.map((d) => {
-          const list = byDay.get(d.date) ?? []
-          const label = `${d.date.split('-').reverse().join('/')}: ${
-            list.length ? list.length + ' aula(s)' : 'sem aulas'
-          }`
-          return (
-            <button
-              key={d.date}
-              role="gridcell"
-              aria-label={label}
-              aria-selected={d.date === day}
-              className={
-                'month-cell' +
-                (d.inMonth ? '' : ' out') +
-                (d.date === today ? ' today' : '') +
-                (d.date === day ? ' selected' : '')
-              }
-              onClick={() => {
-                setDay(d.date)
-                if (!d.inMonth) setMonth(d.date.slice(0, 7))
-              }}
-            >
-              <span className="month-day">{Number(d.date.slice(8))}</span>
-              <span className="month-dots">
-                {list.slice(0, 3).map((s) => (
-                  <i
-                    key={s.id}
-                    className={
-                      'dot ' +
-                      s.status +
-                      (s.mine === 'confirmada' ? ' mine' : '') +
-                      ((s.pending ?? 0) > 0 ? ' pending' : '')
-                    }
-                  />
-                ))}
-                {list.some((s) => s.photos > 0) && <Camera size={10} aria-hidden="true" />}
-              </span>
-            </button>
-          )
-        })}
       </div>
       <p className="calendar-legend">
         <i className="dot realizada" /> realizada <i className="dot prevista" /> prevista{' '}
@@ -433,11 +464,9 @@ export function Agenda({
   )
   if (!staff) return calendar
   return (
-    <div className="student-layout">
-      <div className="student-primary">{calendar}</div>
-      <div>
-        <Schedules call={call} today={today} onChanged={reload} />
-      </div>
+    <div className="student-primary">
+      {calendar}
+      {folhaRapida}
     </div>
   )
 }
@@ -651,6 +680,130 @@ function Roster({
         </label>
       ))}
     </fieldset>
+  )
+}
+
+/** Folha rápida "+ Aula": dia (Hoje/Amanhã), horário frequente e criar em 2 toques. */
+function QuickSessionSheet({
+  today,
+  call,
+  existing,
+  onClose,
+  onCreated,
+  onMaisOpcoes,
+}: {
+  today: string
+  call: Call
+  existing: SessionView[]
+  onClose: () => void
+  onCreated: (id: string, message: string) => Promise<void>
+  onMaisOpcoes: (date: string) => void
+}) {
+  const { data: schedules } = useLoad(() => call<ScheduleView[]>('list_schedules'), [call])
+  const ops = horariosFrequentes(schedules ?? [], today)
+  const [dia, setDia] = useState<'hoje' | 'amanha'>('hoje')
+  const [op, setOp] = useState<HorarioFrequente | null>(null)
+  const [time, setTime] = useState('19:00')
+  const [saving, setSaving] = useState('')
+  const [error, setError] = useState('')
+  useEffect(() => {
+    // Primeiro horário frequente pré-selecionado quando a lista chega.
+    setOp((atual) => atual ?? ops[0] ?? null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schedules])
+  const date = dia === 'hoje' ? today : addDays(today, 1)
+  const escolhido = op ?? { title: 'Treino', start: time, durationMin: 60 }
+  const plan = planNewSession(
+    {
+      title: escolhido.title,
+      date,
+      time: escolhido.start,
+      durationMin: escolhido.durationMin,
+      description: '',
+      photoCount: 0,
+      presentCount: 0,
+    },
+    new Date(),
+  )
+  const conflicts = plan.startsAt ? overlapping(existing, plan.startsAt, escolhido.durationMin) : []
+  async function criar() {
+    if (!plan.startsAt || plan.errors.length || saving) return
+    setSaving('Criando aula…')
+    try {
+      const id = await call<string>('create_session', {
+        p_title: escolhido.title,
+        p_starts_at: plan.startsAt,
+        p_duration: escolhido.durationMin,
+        p_description: null,
+      })
+      await onCreated(id, 'Aula criada.')
+    } catch (e) {
+      setError(friendlyError(e))
+      setSaving('')
+    }
+  }
+  return (
+    <BottomSheet open title="Nova aula" onClose={onClose}>
+      <div className="chip-row" role="group" aria-label="Dia da aula">
+        <button
+          type="button"
+          className={'chip' + (dia === 'hoje' ? ' on' : '')}
+          onClick={() => setDia('hoje')}
+        >
+          Hoje
+        </button>
+        <button
+          type="button"
+          className={'chip' + (dia === 'amanha' ? ' on' : '')}
+          onClick={() => setDia('amanha')}
+        >
+          Amanhã
+        </button>
+      </div>
+      {ops.length > 0 ? (
+        <div className="chip-row" role="group" aria-label="Horário frequente">
+          {ops.map((o) => (
+            <button
+              key={o.start + '|' + o.durationMin}
+              type="button"
+              className={
+                'chip' + (op?.start === o.start && op?.durationMin === o.durationMin ? ' on' : '')
+              }
+              onClick={() => setOp(o)}
+            >
+              {o.title} · {o.start}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <label className="field">
+          <span>Horário</span>
+          <input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+        </label>
+      )}
+      <p className="field-help">
+        {dayLabel(date + 'T15:00:00Z')} · {escolhido.title} às {escolhido.start} ·{' '}
+        {escolhido.durationMin} min
+      </p>
+      {conflicts.length > 0 && (
+        <p className="notice" role="status">
+          Atenção: já existe{' '}
+          {conflicts.map((c) => `${c.title} às ${timeLabel(c.startsAt)}`).join(', ')} nesse horário.
+          Você pode criar mesmo assim.
+        </p>
+      )}
+      {error && (
+        <p className="error-message" role="alert">
+          {error}
+        </p>
+      )}
+      <ActionButton className="primary" disabled={plan.errors.length > 0} action={criar}>
+        {saving || 'Criar aula'}
+      </ActionButton>
+      <button className="text-button" onClick={() => onMaisOpcoes(date)} disabled={!!saving}>
+        Mais opções (descrição, fotos, presenças)
+      </button>
+    </BottomSheet>
   )
 }
 
@@ -878,13 +1031,19 @@ function Journal({
       students.filter((x) => x.status === 'pendente' || x.status === 'confirmada').map((x) => x.id),
     )
   const paths = (j?.photos ?? []).map((p) => p.path).join('|')
+  const [urlsError, setUrlsError] = useState(false),
+    [urlsRetry, setUrlsRetry] = useState(0)
   useEffect(() => {
     if (!paths) return setUrls({})
+    setUrlsError(false)
     photos
       .urls(paths.split('|'))
       .then(setUrls)
-      .catch(() => setUrls({}))
-  }, [paths, photos])
+      .catch(() => {
+        setUrls({})
+        setUrlsError(true)
+      })
+  }, [paths, photos, urlsRetry])
   if (!j)
     return error ? <p className="error-message">{error}</p> : <p className="muted">Carregando…</p>
   const begun = started(j)
@@ -933,6 +1092,14 @@ function Journal({
   const pendingChanges = files.length > 0 || toConfirm.length > 0
   return (
     <div className="journal">
+      {urlsError && (
+        <p className="error-message" role="alert">
+          Não foi possível carregar as fotos.{' '}
+          <button className="text-button" onClick={() => setUrlsRetry((r) => r + 1)}>
+            Tentar de novo
+          </button>
+        </p>
+      )}
       <PhotoGallery
         items={j.photos}
         urls={urls}
@@ -1187,6 +1354,21 @@ function SessionPanel({
               </ActionButton>
             </div>
           )}
+          <div className="correction-row">
+            <ActionButton
+              className="secondary danger"
+              label="Apagar esta aula"
+              confirm="Apagar esta aula? Presenças e fotos serão removidas para sempre. Não dá para desfazer."
+              action={async () => {
+                const paths = await call<string[]>('delete_session', { p_session: id })
+                await Promise.all(paths.map((p) => photos.remove(p).catch(() => {})))
+                onBack()
+                await onChanged()
+              }}
+            >
+              <Trash2 size={16} /> Apagar aula
+            </ActionButton>
+          </div>
         </>
       )}
     </section>
@@ -1291,7 +1473,7 @@ function ScheduleForm({
   )
 }
 
-function Schedules({
+export function Schedules({
   call,
   today,
   onChanged,

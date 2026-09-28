@@ -567,6 +567,57 @@ describe('registro do treino, logo e notificações', () => {
   })
 })
 
+describe('apagar aula (professor e dono)', () => {
+  it('professor (além do dono) apaga aula futura com check-in; ela some da listagem', async () => {
+    const s = await sessionAt('6 hours')
+    await asUser(a, 'select public.checkin($1)', [s])
+    await asUser(teacher, 'select public.delete_session($1)', [s])
+    expect(
+      (await db.query('select * from public.class_sessions where id=$1', [s])).rows,
+    ).toHaveLength(0)
+    expect(
+      (await db.query('select * from public.attendances where session_id=$1', [s])).rows,
+    ).toHaveLength(0)
+    const listed = await one(teacher, 'select public.list_sessions(public.today_sp(),public.today_sp()+1)')
+    expect(listed.find((x: any) => x.id === s)).toBeUndefined()
+    const s2 = await sessionAt('6 hours')
+    await asUser(teacher, "select public.set_member_role($1,'professor')", [b])
+    await asUser(b, 'select public.delete_session($1)', [s2])
+    await asUser(teacher, "select public.set_member_role($1,'aluno')", [b])
+    expect((await db.query('select * from public.class_sessions where id=$1', [s2])).rows).toHaveLength(0)
+  })
+  it('professor apaga aula antiga realizada; contagem do aluno cai', async () => {
+    const s = await sessionAt('-2 hours', 'realizada')
+    await asUser(teacher, 'select public.teacher_add_presence($1,$2)', [s, b])
+    const before = (await one(b, 'select public.student_detail($1)', [b])).total
+    await asUser(teacher, 'select public.delete_session($1)', [s])
+    expect((await one(b, 'select public.student_detail($1)', [b])    ).total).toBe(before - 1)
+    expect(
+      (await db.query('select * from public.attendances where session_id=$1', [s])).rows,
+    ).toHaveLength(0)
+  })
+  it('devolve os caminhos das fotos para limpar o Storage', async () => {
+    const team = (
+      await db.query<{ id: string }>("select id from public.teams where slug='minha-turma'")
+    ).rows[0].id
+    const s = await sessionAt('4 hours')
+    await asUser(teacher, 'select public.add_session_photo($1,$2,null)', [s, `${team}/${s}/a.jpg`])
+    await asUser(teacher, 'select public.add_session_photo($1,$2,null)', [s, `${team}/${s}/b.jpg`])
+    const paths = await one(teacher, 'select public.delete_session($1)', [s])
+    expect((paths as string[]).sort()).toEqual([`${team}/${s}/a.jpg`, `${team}/${s}/b.jpg`].sort())
+    expect((await db.query('select * from public.session_photos where session_id=$1', [s])).rows).toHaveLength(0)
+  })
+  it('aluno, professor de outra equipe e aula inexistente não apagam', async () => {
+    const s = await sessionAt('3 hours')
+    await expect(asUser(a, 'select public.delete_session($1)', [s])).rejects.toThrow()
+    await expect(asUser(outroProf, 'select public.delete_session($1)', [s])).rejects.toThrow()
+    await expect(
+      asUser(teacher, 'select public.delete_session($1)', [id(99)]),
+    ).rejects.toThrow(/encontrada/)
+    expect((await db.query('select * from public.class_sessions where id=$1', [s])).rows).toHaveLength(1)
+  })
+})
+
 describe('código de acesso visível para professores', () => {
   it('dono gera código legível; aluno se cadastra com ele (mesmo em minúsculas)', async () => {
     const code = await one(teacher, 'select public.generate_join_code()')
