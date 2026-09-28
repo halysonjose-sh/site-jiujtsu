@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import type { Belt } from '../domain/rules'
 
 export type TeamRole = 'aluno' | 'professor' | 'dono'
-export type MemberStatus = 'pendente' | 'ativo' | 'bloqueado'
+export type MemberStatus = 'pendente' | 'ativo' | 'inativo' | 'bloqueado'
 export type PresenceStatus = 'pendente' | 'confirmada' | 'rejeitada'
 export type Profile = { id: string; name: string; role: TeamRole; revision: number }
 export type Team = {

@@ -1,4 +1,4 @@
-@import 'tailwindcss';
+﻿@import 'tailwindcss';
 
 :root {
   font-family:
@@ -858,7 +858,7 @@ dialog p {
   border-radius: 12px;
   padding: 24px 26px;
 }
-/* Fase 4: cartão da próxima aula na aba Treinar — o check-in em 1 toque. */
+/* Fase 4: cartÃ£o da prÃ³xima aula na aba Treinar â€” o check-in em 1 toque. */
 .train-hero {
   background: #fffefa;
   border: 1px solid var(--line);
@@ -884,7 +884,7 @@ dialog p {
   font-size: 16px;
   padding: 14px 18px;
 }
-/* Fase 4: último treino com foto. */
+/* Fase 4: Ãºltimo treino com foto. */
 .last-training {
   margin-top: 30px;
   background: #fffefa;
@@ -903,7 +903,7 @@ dialog p {
   margin: 0;
   font-size: 14px;
 }
-/* Fase 5: Graduar domina a tela; destrutivas ficam no "⋯". */
+/* Fase 5: Graduar domina a tela; destrutivas ficam no "â‹¯". */
 .graduar-trigger {
   width: 100%;
   justify-content: center;
@@ -1731,7 +1731,7 @@ dialog p {
   }
 }
 
-/* v2: agenda, horários e equipe */
+/* v2: agenda, horÃ¡rios e equipe */
 .agenda-day {
   font-size: 13px;
   letter-spacing: 0.12em;
@@ -1809,7 +1809,7 @@ dialog p {
   margin-top: 18px;
 }
 
-/* v2.1: calendário mensal e diário de treinos */
+/* v2.1: calendÃ¡rio mensal e diÃ¡rio de treinos */
 .month-nav {
   display: flex;
   align-items: center;
@@ -2103,7 +2103,7 @@ nav button.active svg {
   color: var(--accent);
 }
 
-/* código de acesso */
+/* cÃ³digo de acesso */
 .join-code {
   margin-bottom: 18px;
 }
@@ -2137,7 +2137,7 @@ nav button.active svg {
   align-items: center;
 }
 
-/* v2.4: fotos grandes, prévia e capa */
+/* v2.4: fotos grandes, prÃ©via e capa */
 .photo-gallery {
   margin: 4px -4px 8px;
 }
@@ -2285,7 +2285,7 @@ nav button.active svg {
   border-radius: 50%;
 }
 
-/* Menu de ações (OverflowMenu) */
+/* Menu de aÃ§Ãµes (OverflowMenu) */
 .menu-list {
   display: flex;
   flex-direction: column;
@@ -2302,7 +2302,7 @@ nav button.active svg {
   font-size: 15px;
 }
 
-/* Toast: mensagem rápida com Desfazer, acima da barra inferior */
+/* Toast: mensagem rÃ¡pida com Desfazer, acima da barra inferior */
 .toast {
   position: fixed;
   left: 50%;
@@ -2348,7 +2348,7 @@ nav button.active svg {
   min-height: var(--touch);
 }
 
-/* Botão principal largo; na folha de chamada fica grudado no pé */
+/* BotÃ£o principal largo; na folha de chamada fica grudado no pÃ© */
 .primary-dock {
   width: 100%;
   min-height: 52px;
@@ -2369,7 +2369,7 @@ nav button.active svg {
   background: #fffef9;
 }
 
-/* Botão fantasma: ação secundária sem caixa */
+/* BotÃ£o fantasma: aÃ§Ã£o secundÃ¡ria sem caixa */
 .ghost {
   background: transparent;
   border: 0;
@@ -2540,7 +2540,7 @@ nav button.active svg {
   font-size: 13px;
 }
 
-/* Badge de pendências na barra inferior */
+/* Badge de pendÃªncias na barra inferior */
 .nav-badge {
   display: inline-block;
   min-width: 19px;
@@ -2557,5 +2557,60 @@ nav button.active svg {
 @media (max-width: 760px) {
   .toast {
     bottom: calc(76px + env(safe-area-inset-bottom));
+  }
+}
+
+/* ---- Perfil do aluno (fase 1) ---- */
+.profile-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--cream);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px 16px;
+}
+.profile-card .avatar {
+  width: 52px;
+  height: 52px;
+  font-size: 16px;
+}
+.profile-card .avatar.photo {
+  object-fit: cover;
+}
+.profile-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.profile-meta h2 {
+  margin: 0;
+  font-size: 17px;
+}
+.profile-meta span {
+  font-size: 13px;
+  color: var(--muted);
+}
+.edit-profile {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.inactive-heading {
+  margin-top: 18px;
+}
+.profile-edit input[type='file'] {
+  font-size: 13px;
+}
+@media (max-width: 760px) {
+  .profile-card {
+    flex-wrap: wrap;
+  }
+  .edit-profile {
+    width: 100%;
+    justify-content: center;
   }
 }

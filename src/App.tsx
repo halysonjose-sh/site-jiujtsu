@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Award,
+  Camera,
   Copy,
   Link2,
   RefreshCw,
@@ -20,6 +21,7 @@ import {
   Settings2,
   ShieldCheck,
   Trash2,
+  TrendingUp,
   User,
   Users,
   WifiOff,
@@ -38,6 +40,10 @@ import {
   supabasePhotos,
   rpc,
   supabase,
+  avatarUrls as supabaseAvatarUrls,
+  uploadAvatar as supabaseUploadAvatar,
+  removeAvatar,
+  avatarPath as buildAvatarPath,
   type Call,
   type Dashboard,
   type StudentView,
@@ -61,6 +67,7 @@ import {
 } from './lib/push'
 import { createDemo } from './lib/demo'
 import { useConnection } from './lib/useConnection'
+import { frequencyRate, streak } from './domain/frequency'
 
 const dateLabel = (day: string) =>
   new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', timeZone: 'UTC' }).format(
@@ -135,6 +142,60 @@ function BeltVisual({ belt, degrees }: { belt: Belt; degrees: number }) {
         ))}
       </span>
     </div>
+  )
+}
+const initials = (name: string) =>
+  name
+    .split(' ')
+    .map((w) => w[0])
+    .slice(0, 2)
+    .join('')
+const avatarUrlCache = new Map<string, string>()
+/** Foto do aluno; sem foto (ou antes de carregar a URL), iniciais sobre a faixa. */
+function StudentAvatar({
+  path,
+  name,
+  belt,
+  resolve,
+  className = 'avatar small',
+}: {
+  path: string | null
+  name: string
+  belt: Belt
+  resolve: (paths: string[]) => Promise<Record<string, string>>
+  className?: string
+}) {
+  const [url, setUrl] = useState(() => (path ? avatarUrlCache.get(path) : undefined))
+  useEffect(() => {
+    if (!path) {
+      setUrl(undefined)
+      return
+    }
+    const cached = avatarUrlCache.get(path)
+    if (cached) {
+      setUrl(cached)
+      return
+    }
+    let vivo = true
+    resolve([path])
+      .then((r) => {
+        const u = r[path]
+        if (u && vivo) {
+          avatarUrlCache.set(path, u)
+          setUrl(u)
+        }
+      })
+      .catch(() => {})
+    return () => {
+      vivo = false
+    }
+  }, [path, resolve])
+  if (url)
+    return <img className={className + ' photo'} src={url} alt="" aria-hidden="true" />
+  return (
+    <span className={className + ' belt-' + belt} aria-hidden="true">
+      {initials(name)}
+    </span>
   )
 }
 function Install() {
@@ -416,18 +477,126 @@ function Auth({
   )
 }
 type Mutate = (name: string, args?: Record<string, unknown>) => Promise<void>
+type AvatarUpload = (path: string, file: Blob) => Promise<void>
 function StudentSummary({
   student: s,
   goal,
   teacher,
+  call,
+  mutate,
+  resolveAvatars,
+  uploadAvatarFile,
+  teamId,
+  onChanged,
 }: {
   student: StudentView
   goal: number | null
   teacher: boolean
+  call?: Call
+  mutate?: Mutate
+  resolveAvatars?: (paths: string[]) => Promise<Record<string, string>>
+  uploadAvatarFile?: AvatarUpload
+  teamId?: string
+  onChanged?: () => void
 }) {
   const p = progress(s.cycle, goal)
+  const freq = frequencyRate(s.total, s.held)
+  const seq = streak(
+    s.attendances.filter((a) => a.status === 'confirmada').map((a) => a.date),
+    s.today,
+  )
+  const toast = useToast()
+  const [edit, setEdit] = useState(false),
+    [contact, setContact] = useState(s.contact ?? ''),
+    [birth, setBirth] = useState(s.birthDate ?? ''),
+    [foto, setFoto] = useState<File | null>(null)
+  const podeEditar = !teacher && !!call && !!mutate && !!uploadAvatarFile && !!teamId
+  const escolherFoto = async (file: File | null) => {
+    if (!file || !uploadAvatarFile || !teamId) return
+    try {
+      const blob = await compressImage(file)
+      const path = buildAvatarPath(teamId, s.id, blob)
+      await uploadAvatarFile(path, blob)
+      const old = await call!<string>('set_avatar', { p_path: path })
+      await removeAvatar(old)
+      avatarUrlCache.delete(path)
+      onChanged?.()
+      toast.show('Foto atualizada.')
+    } catch (e) {
+      toast.show(friendlyError(e))
+    }
+  }
   return (
     <>
+      <section className="profile-card">
+        <StudentAvatar
+          path={s.avatarPath}
+          name={s.name}
+          belt={s.belt}
+          resolve={resolveAvatars ?? (async () => ({}))}
+          className="avatar"
+        />
+        <div className="profile-meta">
+          <h2>{s.name}</h2>
+          <span>Na equipe desde {dateLabel(s.joinedAt.slice(0, 10))} de {s.joinedAt.slice(0, 4)}</span>
+          {teacher && s.contact && <span>Contato: {s.contact}</span>}
+          {teacher && s.birthDate && <span>Nascimento: {dateLabel(s.birthDate)}</span>}
+          {s.memberStatus === 'inativo' && <span className="status-pill">Inativo</span>}
+        </div>
+        {podeEditar && (
+          <button className="secondary edit-profile" type="button" onClick={() => setEdit(true)}>
+            <Camera size={16} /> Editar perfil
+          </button>
+        )}
+      </section>
+      {podeEditar && (
+        <BottomSheet open={edit} title="Editar perfil" onClose={() => setEdit(false)}>
+          <div className="menu-list profile-edit">
+            <Field label="Foto">
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                aria-label="Escolher foto do perfil"
+                onChange={(e) => {
+                  const f = e.target.files?.[0] ?? null
+                  setFoto(f)
+                  if (f) escolherFoto(f)
+                }}
+              />
+            </Field>
+            {foto && <p className="field-help">A foto é enviada assim que escolhida.</p>}
+            <Field label="Contato (telefone ou e-mail)">
+              <input
+                value={contact}
+                maxLength={120}
+                onChange={(e) => setContact(e.target.value)}
+              />
+            </Field>
+            <Field label="Nascimento">
+              <input
+                type="date"
+                value={birth}
+                max={s.today}
+                onChange={(e) => setBirth(e.target.value)}
+              />
+            </Field>
+            <ActionButton
+              className="primary"
+              action={async () => {
+                await mutate!('update_my_profile', {
+                  p_contact: contact,
+                  p_birth_date: birth || null,
+                })
+                setEdit(false)
+                onChanged?.()
+              }}
+              success="Perfil atualizado."
+            >
+              Salvar perfil
+            </ActionButton>
+          </div>
+        </BottomSheet>
+      )}
       <section className="rank-card">
         <div className="rank-heading">
           <span className="eyebrow" aria-hidden="true">
@@ -461,6 +630,17 @@ function StudentSummary({
           </span>
           <strong data-testid="cycle-count">{s.cycle}</strong>
           <span className="muted">Desde a última graduação</span>
+        </section>
+        <section className="stat-card">
+          <span className="stat-label">
+            <TrendingUp size={18} /> Frequência
+          </span>
+          <strong data-testid="frequency-rate">{freq === null ? '—' : freq + '%'}</strong>
+          <span className="muted">
+            {seq > 0
+              ? `Sequência: ${seq} ${seq === 1 ? 'treino' : 'treinos'}`
+              : 'Desde sua entrada na equipe'}
+          </span>
         </section>
       </div>
       {p && (
@@ -651,6 +831,7 @@ function History({
                 Faixa {e.belt} · {e.degrees} {e.degrees === 1 ? 'grau' : 'graus'} ·{' '}
                 {dateLabel(e.date)} de {e.date.slice(0, 4)}
               </span>
+              {e.note && <span className="muted">{e.note}</span>}
             </div>
           </div>
         ))
@@ -666,6 +847,7 @@ function History({
 function TeacherActions({ s, mutate }: { s: StudentView; mutate: Mutate }) {
   const [belt, setBelt] = useState<Belt>('branca'),
     [degrees, setDegrees] = useState(0),
+    [note, setNote] = useState(''),
     [sheet, setSheet] = useState(false)
   const toast = useToast()
   // A failed/uncertain retry keeps its request key until the server revision changes.
@@ -688,9 +870,11 @@ function TeacherActions({ s, mutate }: { s: StudentView; mutate: Mutate }) {
       p_kind: kind,
       p_key: keyFor(kind),
       p_revision: st.revision,
+      p_note: note.trim() || null,
     })
       .then(() => {
         setSheet(false)
+        setNote('')
         const msg =
           kind === 'grau'
             ? 'Grau concedido.'
@@ -743,6 +927,13 @@ function TeacherActions({ s, mutate }: { s: StudentView; mutate: Mutate }) {
                 ))}
               </select>
             </Field>
+            <Field label="Observação (opcional)">
+              <input
+                value={note}
+                maxLength={300}
+                onChange={(e) => setNote(e.target.value)}
+              />
+            </Field>
           </div>
           <ActionButton
             className="secondary"
@@ -753,6 +944,7 @@ function TeacherActions({ s, mutate }: { s: StudentView; mutate: Mutate }) {
                 p_belt: belt,
                 p_degrees: degrees,
                 p_revision: s.revision,
+                p_note: note.trim() || null,
               })
             }
           >
@@ -788,11 +980,44 @@ function TeacherActions({ s, mutate }: { s: StudentView; mutate: Mutate }) {
                 Desfazer última graduação
               </ActionButton>
             )}
+            {s.memberStatus === 'ativo' ? (
+              <ActionButton
+                className="text-button danger"
+                confirm={`Marcar ${s.name} como inativo? O aluno perde o acesso ao app; o histórico fica guardado e você pode reativar depois.`}
+                success="Aluno marcado como inativo."
+                action={() =>
+                  mutate('set_student_status', { p_user: s.id, p_status: 'inativo' })
+                }
+              >
+                Marcar como inativo
+              </ActionButton>
+            ) : (
+              s.memberStatus === 'inativo' && (
+                <ActionButton
+                  className="text-button"
+                  confirm={`Reativar ${s.name}? O aluno volta a ter acesso ao app.`}
+                  success="Aluno reativado."
+                  action={() =>
+                    mutate('set_student_status', { p_user: s.id, p_status: 'ativo' })
+                  }
+                >
+                  Reativar aluno
+                </ActionButton>
+              )
+            )}
           </div>
         </OverflowMenu>
       </div>
       <BottomSheet open={sheet} title="Graduar" onClose={() => setSheet(false)}>
         <div className="menu-list">
+          <Field label="Observação (opcional)">
+            <input
+              value={note}
+              maxLength={300}
+              placeholder="Ex.: examenito, seminário..."
+              onChange={(e) => setNote(e.target.value)}
+            />
+          </Field>
           <ActionButton className="primary" disabled={s.degrees >= 4} action={() => graduar('grau')}>
             <Award size={18} /> +1 grau
           </ActionButton>
@@ -1311,10 +1536,17 @@ export default function App() {
     owner = data.profile.role === 'dono',
     active = data.students.filter((s) => s.memberStatus === 'ativo'),
     pendingMembers = data.students.filter((s) => s.memberStatus === 'pendente'),
+    inativos = data.students.filter((s) => s.memberStatus === 'inativo'),
     student = teacher ? data.students.find((s) => s.id === selected) : data.students[0],
     filtered = active.filter((s) =>
       s.name.toLocaleLowerCase('pt-BR').includes(search.toLocaleLowerCase('pt-BR')),
     )
+  const resolveAvatars = demo
+    ? (paths: string[]) => demo.photos.urls(paths)
+    : supabaseAvatarUrls
+  const uploadAvatarFile: AvatarUpload = demo
+    ? (path, file) => demo.photos.upload(path, file)
+    : supabaseUploadAvatar
   const badgeTotal = teacher ? pendingMembers.length + reviewsToday : 0
   const pages = teacher
     ? [
@@ -1522,13 +1754,12 @@ export default function App() {
                 {filtered.length ? (
                   filtered.map((s) => (
                     <button className="student-row" key={s.id} onClick={() => setSelected(s.id)}>
-                      <span className={'avatar small belt-' + s.belt} aria-hidden="true">
-                        {s.name
-                          .split(' ')
-                          .map((w) => w[0])
-                          .slice(0, 2)
-                          .join('')}
-                      </span>
+                      <StudentAvatar
+                        path={s.avatarPath}
+                        name={s.name}
+                        belt={s.belt}
+                        resolve={resolveAvatars}
+                      />
                       <span className="student-name">
                         <strong>{s.name}</strong>
                         <span>
@@ -1553,13 +1784,48 @@ export default function App() {
                       : 'Seus alunos aparecerão aqui quando se cadastrarem com o código da equipe.'}
                   </p>
                 )}
+                {inativos.length > 0 && (
+                  <>
+                    <div className="section-heading inactive-heading">
+                      <h3>Inativos</h3>
+                      <span className="muted">Sem acesso ao app</span>
+                    </div>
+                    {inativos
+                      .filter((s) =>
+                        s.name.toLocaleLowerCase('pt-BR').includes(search.toLocaleLowerCase('pt-BR')),
+                      )
+                      .map((s) => (
+                        <button className="student-row cancelled" key={s.id} onClick={() => setSelected(s.id)}>
+                          <StudentAvatar
+                            path={s.avatarPath}
+                            name={s.name}
+                            belt={s.belt}
+                            resolve={resolveAvatars}
+                          />
+                          <span className="student-name">
+                            <strong>{s.name}</strong>
+                            <span>
+                              Faixa {s.belt} · {s.total} {s.total === 1 ? 'aula' : 'aulas'}
+                            </span>
+                          </span>
+                          <span className="status-pill">Inativo</span>
+                          <ChevronRight size={18} />
+                        </button>
+                      ))}
+                  </>
+                )}
               </section>
             )
           ) : student ? (
             teacher ? (
               <div className="student-layout">
                 <div className="student-primary">
-                  <StudentSummary student={student} goal={data.goal} teacher />
+                  <StudentSummary
+                    student={student}
+                    goal={data.goal}
+                    teacher
+                    resolveAvatars={resolveAvatars}
+                  />
                   <History
                     key={student.id}
                     s={student}
@@ -1581,7 +1847,17 @@ export default function App() {
               />
             ) : (
               <div className="student-primary">
-                <StudentSummary student={student} goal={data.goal} teacher={false} />
+                <StudentSummary
+                  student={student}
+                  goal={data.goal}
+                  teacher={false}
+                  call={call}
+                  mutate={mutate}
+                  resolveAvatars={resolveAvatars}
+                  uploadAvatarFile={uploadAvatarFile}
+                  teamId={data.team?.id ?? ''}
+                  onChanged={refresh}
+                />
                 <History key={student.id} s={student} teacher={false} mutate={mutate} call={call} />
                 <ActionButton className="secondary" action={logout}>
                   <LogOut size={17} /> Sair

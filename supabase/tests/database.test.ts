@@ -409,6 +409,7 @@ describe('graduação continua protegida', () => {
       asUser(teacher, "select public.graduate_student($1,'grau',gen_random_uuid(),$2)", [a, rev]),
     ).rejects.toThrow(/atualiz/)
     let d = await one(a, 'select public.student_detail($1)', [a])
+    console.log('DEBUG', JSON.stringify({ events: d.events, att: d.attendances.map((x: any) => x.date), today: d.today, held: d.held, joinedAt: d.joinedAt }))
     expect([d.belt, d.degrees, d.cycle]).toEqual(['azul', 3, 0])
     await asUser(teacher, 'select public.undo_graduation($1,$2,$3)', [a, key, d.revision])
     d = await one(a, 'select public.student_detail($1)', [a])
@@ -651,5 +652,68 @@ describe('código de acesso visível para professores', () => {
       /outro/,
     )
     await expect(asUser(a, "select public.set_join_code('ALUNO-TENTA-1')")).rejects.toThrow()
+  })
+})
+
+describe('perfil do aluno: contato, nascimento, avatar e status inativo', () => {
+  it('aluno edita o próprio contato e nascimento; professor vê no detalhe', async () => {
+    await asUser(novo, "select public.update_my_profile('(11) 91234-5678','1998-05-20')")
+    const d = await one(teacher, 'select public.student_detail($1)', [novo])
+    expect(d.contact).toBe('(11) 91234-5678')
+    expect(d.birthDate).toBe('1998-05-20')
+    expect(typeof d.held).toBe('number')
+    expect(d.joinedAt).toBeTruthy()
+    await expect(
+      asUser(novo, "select public.update_my_profile('x','1998-05-20')", []),
+    ).resolves.toBeTruthy()
+  })
+  it('valida contato longo e nascimento futuro', async () => {
+    await expect(
+      asUser(novo, 'select public.update_my_profile($1,null)', ['x'.repeat(121)]),
+    ).rejects.toThrow(/120/)
+    await expect(
+      asUser(novo, 'select public.update_my_profile(null,public.today_sp()+1)'),
+    ).rejects.toThrow()
+  })
+  it('avatar: caminho válido grava e devolve o antigo; caminho inválido é recusado', async () => {
+    const team = (
+      await db.query<{ id: string }>("select id from public.teams where slug='minha-turma'")
+    ).rows[0].id
+    const path = `avatars/${team}/${novo}/11111111-2222-3333-4444-555555555555.jpg`
+    expect(await one(novo, 'select public.set_avatar($1)', [path])).toBeNull()
+    expect(await one(novo, 'select public.set_avatar($1)', [path + '.png'])).toBe(path)
+    await expect(
+      asUser(novo, 'select public.set_avatar($1)', [`avatars/${team}/${outroAluno}/x.jpg`]),
+    ).rejects.toThrow(/inválido/)
+    await expect(asUser(novo, 'select public.set_avatar($1)', ['/etc/passwd'])).rejects.toThrow()
+  })
+  it('professor marca inativo: aluno perde acesso, professor continua vendo e reativa', async () => {
+    await asUser(teacher, 'select public.set_student_status($1,\'inativo\')', [novo])
+    await expect(asUser(novo, 'select public.student_detail($1)', [novo])).rejects.toThrow()
+    const list = await one(teacher, 'select public.list_students()')
+    expect(list.find((s: any) => s.id === novo).memberStatus).toBe('inativo')
+    await expect(asUser(a, 'select public.set_student_status($1,\'ativo\')', [novo])).rejects.toThrow()
+    await asUser(teacher, 'select public.set_student_status($1,\'ativo\')', [novo])
+    expect((await one(novo, 'select public.student_detail($1)', [novo])).total).toBe(0)
+    await expect(
+      asUser(teacher, 'select public.set_student_status($1,\'bloqueado\')', [novo]),
+    ).rejects.toThrow(/Status/)
+  })
+  it('graduação guarda observação; observação longa é recusada', async () => {
+    await asUser(teacher, 'select public.set_initial($1,\'branca\',0,0,$2)', [novo, 'Veio de outra academia'])
+    const rev = (await one(teacher, 'select public.student_detail($1)', [novo])).revision
+    await asUser(
+      teacher,
+      'select public.graduate_student($1,\'grau\',gen_random_uuid(),$2,$3)',
+      [novo, rev, 'Seminário de raspagem'],
+    )
+    const d = await one(teacher, 'select public.student_detail($1)', [novo])
+    expect(d.events.map((e: any) => e.note)).toEqual(['Seminário de raspagem', 'Veio de outra academia'])
+    await expect(
+      asUser(teacher, 'select public.graduate_student($1,\'grau\',gen_random_uuid(),0,$2)', [
+        novo,
+        'x'.repeat(301),
+      ]),
+    ).rejects.toThrow()
   })
 })

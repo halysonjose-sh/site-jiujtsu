@@ -17,6 +17,9 @@ alter table public.team_members
  add constraint team_members_status_check check (status in ('pendente','ativo','inativo','bloqueado'));
 
 -- ---------------------------------------------------------------- graduação com observação
+-- drop das assinaturas antigas: com default, a nova sobrecarga deixaria chamadas de 4 argumentos ambíguas.
+drop function if exists public.set_initial(uuid, text, integer, integer);
+drop function if exists public.graduate_student(uuid, text, uuid, integer);
 create or replace function public.set_initial(p_student uuid, p_belt text, p_degrees integer, p_revision integer, p_note text default null) returns void language plpgsql security definer set search_path='' as $$
 begin
  if p_revision is null then raise exception 'Atualize a tela antes de continuar.'; end if;
@@ -100,7 +103,7 @@ create function public.set_avatar(p_path text) returns text language plpgsql sec
 declare v_old text;
 begin
  perform public.require_member();
- if p_path is null or p_path !~ ('^avatars/' || public.my_team()::text || '/[0-9a-f-]{36}\.(jpg|png|webp)$') then
+  if p_path is null or p_path !~ ('^avatars/' || public.my_team()::text || '/([0-9a-f-]{36}/)?[0-9a-f-]{36}\.(jpg|png|webp)$') then
   raise exception 'Local da foto inválido.'; end if;
  select avatar_path into v_old from public.profiles where id = auth.uid() for update;
  update public.profiles set avatar_path = p_path where id = auth.uid();
