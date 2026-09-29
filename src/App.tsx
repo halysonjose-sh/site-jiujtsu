@@ -656,7 +656,9 @@ function StudentSummary({
   account?: { email: string; changeEmail: (v: string) => Promise<void>; changePassword: (v: string) => Promise<void> }
 }) {
   const p = progress(s.cycle, goal)
-  const freq = frequencyRate(s.total, s.held)
+  // Presença histórica lançada antes da entrada do aluno deixa total > held;
+  // nesse caso a frequência não é calculável — mostra "—" em vez de derrubar a tela.
+  const freq = s.total <= s.held ? frequencyRate(s.total, s.held) : null
   const seq = streak(
     s.attendances.filter((a) => a.status === 'confirmada').map((a) => a.date),
     s.today,
