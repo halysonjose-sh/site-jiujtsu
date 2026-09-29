@@ -1217,6 +1217,15 @@ dialog p {
 .settings-card .primary {
   margin-top: 10px;
 }
+.settings-card + .settings-card {
+  margin-top: 24px;
+}
+.settings-card .section-heading > svg {
+  color: color-mix(in srgb, var(--green) 75%, #fff);
+}
+.settings-card > .secondary {
+  margin-top: 14px;
+}
 .staff-list {
   list-style: none;
   margin: 14px 0 0;

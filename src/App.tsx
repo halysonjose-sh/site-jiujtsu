@@ -1503,7 +1503,6 @@ function Settings({
   today,
   onChanged,
   onPreview,
-  sair,
 }: {
   goal: number | null
   mutate: Mutate
@@ -1514,7 +1513,6 @@ function Settings({
   today: string
   onChanged: () => Promise<void>
   onPreview: (cores: { p: string; a: string } | null) => void
-  sair: () => Promise<void>
 }) {
   const [value, setValue] = useState(goal?.toString() ?? ''),
     [name, setName] = useState(team?.name ?? ''),
@@ -1668,9 +1666,8 @@ function Settings({
         <Notifications demo={demo} />
       </section>
       <Schedules call={call} today={today} onChanged={onChanged} />
-      <ActionButton className="secondary" action={sair}>
-        <LogOut size={17} /> Sair
-      </ActionButton>
+      {/* O logout fica na sidebar (desktop) e no topbar do celular; um Sair
+          aqui virava um botão solto no fim da página. */}
     </>
   )
 }
@@ -2066,7 +2063,6 @@ export default function App() {
               today={data.today}
               onChanged={refresh}
               onPreview={setPreview}
-              sair={logout}
             />
           ) : page === 'agenda' ? (
             <Agenda

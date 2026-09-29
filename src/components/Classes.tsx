@@ -1579,11 +1579,12 @@ export function Schedules({
     await onChanged()
   }
   return (
-    <section className="teacher-actions">
+    <section className="settings-card">
       <div className="section-heading">
-        <h3>Horários padrão</h3>
+        <h2>Horários padrão.</h2>
         <CalendarClock size={19} />
       </div>
+      <p className="muted">Cada horário vira aulas previstas na Agenda.</p>
       {error && <p className="error-message">{error}</p>}
       {data?.length === 0 && <p className="muted">Nenhum horário. Ex.: seg, qua e sex às 7h.</p>}
       {data?.map((s) =>
