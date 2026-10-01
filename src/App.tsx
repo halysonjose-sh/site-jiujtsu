@@ -14,6 +14,8 @@ import {
   CalendarDays,
   Check,
   ChevronRight,
+  Eye,
+  EyeOff,
   GraduationCap,
   LogOut,
   Plus,
@@ -382,6 +384,7 @@ function Auth({
     [error, setError] = useState(''),
     [message, setMessage] = useState('')
   const [criandoTurma, setCriandoTurma] = useState(false)
+  const [verSenha, setVerSenha] = useState(false)
   const lock = useRef(false)
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -445,6 +448,7 @@ function Auth({
   }
   function switchMode(next: typeof mode) {
     setMode(next)
+    setVerSenha(false)
     setError('')
     setMessage('')
   }
@@ -518,13 +522,24 @@ function Auth({
             )}
             {(recovery || mode !== 'forgot') && (
               <Field label="Senha">
-                <input
-                  name="password"
-                  type="password"
-                  minLength={8}
-                  autoComplete={mode === 'signup' || recovery ? 'new-password' : 'current-password'}
-                  required
-                />
+                <div className="password-wrap">
+                  <input
+                    name="password"
+                    type={verSenha ? 'text' : 'password'}
+                    minLength={8}
+                    autoComplete={mode === 'signup' || recovery ? 'new-password' : 'current-password'}
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="password-toggle"
+                    onClick={() => setVerSenha((v) => !v)}
+                    aria-label={verSenha ? 'Ocultar senha' : 'Mostrar senha'}
+                    aria-pressed={verSenha}
+                  >
+                    {verSenha ? <EyeOff size={19} /> : <Eye size={19} />}
+                  </button>
+                </div>
               </Field>
             )}
             {!recovery && mode === 'signup' && (

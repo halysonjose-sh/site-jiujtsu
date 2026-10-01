@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import {
+  ArrowLeft,
   CalendarClock,
   Camera,
   Check,
@@ -898,7 +899,7 @@ function NewSessionForm({
   return (
     <section className="history-card new-session-form">
       <button className="text-button back" onClick={onCancel} disabled={!!saving}>
-        ← Voltar para o calendário
+        <ArrowLeft size={17} /> Voltar para o calendário
       </button>
       <div className="section-heading">
         <h3>Nova aula</h3>
@@ -1249,7 +1250,7 @@ function SessionPanel({
     return (
       <section className="history-card">
         <button className="text-button back" onClick={onBack}>
-          ← Voltar para o calendário
+          <ArrowLeft size={17} /> Voltar para o calendário
         </button>
         {error ? <p className="error-message">{error}</p> : <p className="muted">Carregando…</p>}
       </section>
@@ -1260,7 +1261,7 @@ function SessionPanel({
   return (
     <section className="history-card">
       <button className="text-button back" onClick={onBack}>
-        ← Voltar para o calendário
+        <ArrowLeft size={17} /> Voltar para o calendário
       </button>
       <div className="section-heading">
         <h3>

@@ -1044,6 +1044,61 @@ dialog p {
 .back {
   margin-bottom: 16px;
   gap: 8px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 8px 14px 8px 10px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--green) 9%, #fff);
+  font-size: 14px;
+  transition: background 0.15s;
+}
+.back:hover {
+  background: color-mix(in srgb, var(--green) 16%, #fff);
+  text-decoration: none;
+}
+.back:active {
+  background: color-mix(in srgb, var(--green) 24%, #fff);
+}
+.back:disabled {
+  opacity: 0.55;
+}
+.back:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+.back svg {
+  flex: none;
+}
+.password-wrap {
+  position: relative;
+  display: flex;
+}
+.password-wrap input {
+  width: 100%;
+  padding-right: 48px;
+}
+.password-toggle {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: var(--muted);
+  background: transparent;
+}
+.password-toggle:hover {
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 9%, #fff);
+}
+.password-toggle:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 1px;
 }
 .teacher-overview {
   display: grid;
