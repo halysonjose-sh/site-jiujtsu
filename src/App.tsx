@@ -501,11 +501,11 @@ function Auth({
           <p className="muted">
             {recovery
               ? 'Escolha uma senha com pelo menos 8 caracteres.'
-              : mode === 'signup'
-                ? criandoTurma
-                  ? 'Dê um nome à sua turma; você vira o responsável.'
-                  : 'Use o código recebido do seu professor.'
-                : mode === 'forgot'
+                : mode === 'signup'
+                  ? criandoTurma
+                    ? 'Dê um nome à sua turma; você vira o responsável.'
+                    : 'Alunos usam o código da equipe; professores usam o código de professor.'
+                  : mode === 'forgot'
                   ? 'Enviaremos um link para o seu e-mail.'
                   : 'Entre para acompanhar seus treinos.'}
           </p>
@@ -567,7 +567,7 @@ function Auth({
                     <input name="new_team" minLength={2} maxLength={80} autoComplete="organization" required />
                   </Field>
                 ) : (
-                  <Field label="Código da equipe">
+                  <Field label="Código da equipe ou de professor">
                     <input
                       name="code"
                       minLength={8}
@@ -686,7 +686,9 @@ function StudentSummary({
     [foto, setFoto] = useState<File | null>(null),
     [novoEmail, setNovoEmail] = useState(''),
     [novaSenha, setNovaSenha] = useState('')
-  const podeEditar = !teacher && !!call && !!mutate && !!uploadAvatarFile && !!teamId
+  // O dono edita o perfil da equipe técnica; qualquer professor edita o perfil
+  // dos alunos. A foto continua sendo enviada pelo próprio membro (Storage).
+  const podeEditar = !!call && !!mutate && !!uploadAvatarFile && !!teamId
   const escolherFoto = async (file: File | null) => {
     if (!file || !uploadAvatarFile || !teamId) return
     try {
@@ -740,19 +742,23 @@ function StudentSummary({
       {podeEditar && (
         <BottomSheet open={edit} title="Editar perfil" onClose={() => setEdit(false)}>
           <div className="menu-list profile-edit">
-            <Field label="Foto">
-              <input
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                aria-label="Escolher foto do perfil"
-                onChange={(e) => {
-                  const f = e.target.files?.[0] ?? null
-                  setFoto(f)
-                  if (f) escolherFoto(f)
-                }}
-              />
-            </Field>
-            {foto && <p className="field-help">A foto é enviada assim que escolhida.</p>}
+            {!teacher && (
+              <>
+                <Field label="Foto">
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    aria-label="Escolher foto do perfil"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0] ?? null
+                      setFoto(f)
+                      if (f) escolherFoto(f)
+                    }}
+                  />
+                </Field>
+                {foto && <p className="field-help">A foto é enviada assim que escolhida.</p>}
+              </>
+            )}
             <Field label="Nome">
               <input
                 value={nome}
@@ -778,11 +784,20 @@ function StudentSummary({
             <ActionButton
               className="primary"
               action={async () => {
-                await mutate!('update_my_profile', {
-                  p_name: nome,
-                  p_contact: contact,
-                  p_birth_date: birth || null,
-                })
+                if (teacher) {
+                  await mutate!('update_member_profile', {
+                    p_user: s.id,
+                    p_name: nome,
+                    p_contact: contact,
+                    p_birth_date: birth || null,
+                  })
+                } else {
+                  await mutate!('update_my_profile', {
+                    p_name: nome,
+                    p_contact: contact,
+                    p_birth_date: birth || null,
+                  })
+                }
                 setEdit(false)
                 onChanged?.()
               }}
@@ -1446,14 +1461,211 @@ function Notifications({ demo }: { demo: boolean }) {
     </div>
   )
 }
-type StaffMember = { id: string; name: string; role: string }
+/** Folha de edição do perfil de um membro da equipe técnica (dono edita professores). */
+function StaffProfileSheet({
+  m,
+  mutate,
+  onClose,
+}: {
+  m: StudentView
+  mutate: Mutate
+  onClose: () => void
+}) {
+  const [nome, setNome] = useState(m.name),
+    [contact, setContact] = useState(m.contact ?? ''),
+    [birth, setBirth] = useState(m.birthDate ?? '')
+  return (
+    <BottomSheet open title={`Perfil de ${m.name}`} onClose={onClose}>
+      <form
+        className="menu-list profile-edit"
+        onSubmit={(e) => {
+          e.preventDefault()
+        }}
+      >
+        <Field label="Nome">
+          <input value={nome} onChange={(e) => setNome(e.target.value)} />
+        </Field>
+        <Field label="Contato">
+          <input
+            value={contact}
+            inputMode="tel"
+            onChange={(e) => setContact(e.target.value)}
+            placeholder="(11) 90000-0000"
+          />
+        </Field>
+        <Field label="Data de nascimento">
+          <input type="date" value={birth} onChange={(e) => setBirth(e.target.value)} />
+        </Field>
+        <ActionButton
+          className="primary"
+          action={async () => {
+            await mutate('update_member_profile', {
+              p_user: m.id,
+              p_name: nome,
+              p_contact: contact,
+              p_birth_date: birth || null,
+            })
+            onClose()
+          }}
+          success="Perfil atualizado."
+        >
+          Salvar perfil
+        </ActionButton>
+      </form>
+    </BottomSheet>
+  )
+}
 
-/** Equipe técnica da turma: o dono promove professor na aba Alunos e rebaixa aqui. */
+/** Folha de graduação de um professor: situação inicial, grau, faixa e desfazer. */
+function StaffGraduationSheet({
+  m,
+  mutate,
+  onClose,
+}: {
+  m: StudentView
+  mutate: Mutate
+  onClose: () => void
+}) {
+  const [belt, setBelt] = useState<Belt>('branca'),
+    [degrees, setDegrees] = useState(0),
+    [note, setNote] = useState('')
+  const next = belts[belts.indexOf(m.belt) + 1]
+  const last = m.events.find((e) => e.kind !== 'initial' && !e.cancelled)
+  const keyFor = (kind: string) => crypto.randomUUID()
+  return (
+    <BottomSheet open title={`Graduação de ${m.name}`} onClose={onClose}>
+      <div className="menu-list profile-edit">
+        {!m.initialSet ? (
+          <>
+            <p className="field-help">
+              Defina a situação inicial: a faixa que a pessoa já tem e quantos graus.
+            </p>
+            <Field label="Faixa inicial">
+              <select value={belt} onChange={(e) => setBelt(e.target.value as Belt)}>
+                {belts.map((b) => (
+                  <option key={b} value={b}>
+                    Faixa {b}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Graus iniciais">
+              <select value={degrees} onChange={(e) => setDegrees(Number(e.target.value))}>
+                {[0, 1, 2, 3, 4].map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Observação">
+              <input
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="Opcional"
+                maxLength={300}
+              />
+            </Field>
+            <ActionButton
+              className="primary"
+              action={async () => {
+                await mutate('set_initial', {
+                  p_student: m.id,
+                  p_belt: belt,
+                  p_degrees: degrees,
+                  p_revision: m.revision,
+                  p_note: note.trim() || null,
+                })
+                onClose()
+              }}
+              success="Situação inicial definida."
+            >
+              Salvar situação inicial
+            </ActionButton>
+          </>
+        ) : (
+          <>
+            <p className="field-help">
+              Faixa {m.belt} · {m.degrees} {m.degrees === 1 ? 'grau' : 'graus'}
+            </p>
+            <Field label="Observação">
+              <input
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="Opcional"
+                maxLength={300}
+              />
+            </Field>
+            <div className="form-grid">
+              {m.degrees < 4 && (
+                <ActionButton
+                  className="primary"
+                  action={async () => {
+                    await mutate('graduate_student', {
+                      p_student: m.id,
+                      p_kind: 'grau',
+                      p_key: keyFor('grau'),
+                      p_revision: m.revision,
+                      p_note: note.trim() || null,
+                    })
+                    onClose()
+                  }}
+                  success="Grau concedido."
+                >
+                  +1 grau
+                </ActionButton>
+              )}
+              {next && (
+                <ActionButton
+                  className="secondary"
+                  action={async () => {
+                    await mutate('graduate_student', {
+                      p_student: m.id,
+                      p_kind: 'faixa',
+                      p_key: keyFor('faixa'),
+                      p_revision: m.revision,
+                      p_note: note.trim() || null,
+                    })
+                    onClose()
+                  }}
+                  success={`Promovido para a faixa ${next}.`}
+                >
+                  Faixa {next}
+                </ActionButton>
+              )}
+            </div>
+            {last && (
+              <ActionButton
+                className="secondary"
+                confirm="Desfazer a última graduação? A faixa e os graus serão restaurados."
+                success="Graduação desfeita."
+                action={async () => {
+                  await mutate('undo_graduation', {
+                    p_student: m.id,
+                    p_event: last.id,
+                    p_revision: m.revision,
+                  })
+                  onClose()
+                }}
+              >
+                Desfazer última graduação
+              </ActionButton>
+            )}
+          </>
+        )}
+      </div>
+    </BottomSheet>
+  )
+}
+
+/** Equipe técnica: o dono edita perfis, gradua professores, elege o sucessor e rebaixa. */
 function StaffSection({ call, mutate }: { call: Call; mutate: Mutate }) {
-  const [staff, setStaff] = useState<StaffMember[] | null>(null)
+  const [staff, setStaff] = useState<StudentView[] | null>(null)
   const [erro, setErro] = useState('')
+  const [perfil, setPerfil] = useState<StudentView | null>(null)
+  const [graduar, setGraduar] = useState<StudentView | null>(null)
   const load = useCallback(() => {
-    call<StaffMember[]>('list_staff')
+    call<StudentView[]>('list_staff')
       .then((s) => {
         setErro('')
         setStaff(s)
@@ -1468,10 +1680,10 @@ function StaffSection({ call, mutate }: { call: Call; mutate: Mutate }) {
   }, [load])
   return (
     <section className="settings-card">
-      <h2>Professores da equipe.</h2>
+      <h2>Equipe técnica.</h2>
       <p className="muted">
-        Para ter um professor: a pessoa cria a conta com o código da equipe e você a promove na aba
-        Alunos; aqui você pode rebaixar.
+        Professores entram com o código de professor ou são promovidos na aba Alunos. Aqui o dono
+        edita perfis, gradua e elege o próximo dono.
       </p>
       {erro && (
         <p className="error-message" role="alert">
@@ -1484,25 +1696,322 @@ function StaffSection({ call, mutate }: { call: Call; mutate: Mutate }) {
         <ul className="staff-list">
           {staff.map((m) => (
             <li key={m.id}>
-              <span>{m.name}</span>
+              <span className="staff-member">
+                <StudentAvatar
+                  path={m.avatarPath}
+                  name={m.name}
+                  belt={m.belt}
+                  resolve={async () => ({})}
+                />
+                <span>
+                  <strong>{m.name}</strong>
+                  <span className="muted">
+                    {m.role === 'dono' ? 'Dono da equipe' : 'Professor'} · Faixa {m.belt}
+                    {m.degrees > 0 ? ` · ${m.degrees} ${m.degrees === 1 ? 'grau' : 'graus'}` : ''}
+                  </span>
+                </span>
+              </span>
               {m.role === 'dono' ? (
-                <span className="muted">Dono da equipe</span>
+                <span className="muted">Você</span>
               ) : (
-                <ActionButton
-                  className="text-button danger"
-                  confirm={`Voltar ${m.name} para aluno? Ele perde o acesso de professor.`}
-                  success={`${m.name} voltou para aluno.`}
-                  action={async () => {
-                    await mutate('set_member_role', { p_user: m.id, p_role: 'aluno' })
-                    load()
-                  }}
-                >
-                  Voltar para aluno
-                </ActionButton>
+                <OverflowMenu label={`Ações para ${m.name}`}>
+                  <button className="menu-item" type="button" onClick={() => setPerfil(m)}>
+                    <User size={16} /> Editar perfil
+                  </button>
+                  <button className="menu-item" type="button" onClick={() => setGraduar(m)}>
+                    <GraduationCap size={16} /> Graduar
+                  </button>
+                  {/* data-stay: o menu não fecha ao clicar, para o diálogo de confirmação existir. */}
+                  <div data-stay>
+                    <ActionButton
+                      className="text-button"
+                      confirm={`Eleger ${m.name} como dono? Você volta a ser professor e ele passa a gerenciar a equipe.`}
+                      success={`${m.name} agora é o dono da equipe.`}
+                      action={async () => {
+                        await mutate('transfer_ownership', { p_user: m.id })
+                        load()
+                      }}
+                    >
+                      <ShieldCheck size={16} /> Eleger como dono
+                    </ActionButton>
+                    <ActionButton
+                      className="text-button danger"
+                      confirm={`Voltar ${m.name} para aluno? Ele perde o acesso de professor.`}
+                      success={`${m.name} voltou para aluno.`}
+                      action={async () => {
+                        await mutate('set_member_role', { p_user: m.id, p_role: 'aluno' })
+                        load()
+                      }}
+                    >
+                      Voltar para aluno
+                    </ActionButton>
+                  </div>
+                </OverflowMenu>
               )}
             </li>
           ))}
         </ul>
+      )}
+      {perfil && (
+        <StaffProfileSheet
+          m={perfil}
+          mutate={mutate}
+          onClose={() => {
+            setPerfil(null)
+            load()
+          }}
+        />
+      )}
+      {graduar && (
+        <StaffGraduationSheet
+          m={graduar}
+          mutate={mutate}
+          onClose={() => {
+            setGraduar(null)
+            load()
+          }}
+        />
+      )}
+    </section>
+  )
+}
+
+/** Código de professor: quem se cadastra com ele entra direto como professor ativo. */
+function ProfCode({ call }: { call: Call }) {
+  const [code, setCode] = useState<string | null | undefined>(undefined)
+  const [custom, setCustom] = useState('')
+  const [copied, setCopied] = useState(false)
+  const [erro, setErro] = useState('')
+  useEffect(() => {
+    call<string | null>('get_prof_code')
+      .then(setCode)
+      .catch((e) => setErro(friendlyError(e)))
+  }, [call])
+  const link = 'https://tatame.app'
+  const message = code
+    ? `Olá! Para entrar como professor no app Tatame, abra ${link} e cadastre-se. Código de professor: ${code}`
+    : ''
+  return (
+    <section className="settings-card">
+      <h2>Código de professor.</h2>
+      <p className="muted">
+        Quem se cadastra com este código entra direto como professor, sem passar pela aprovação de
+        aluno. Guarde-o: ele dá acesso de professor à equipe.
+      </p>
+      {erro && (
+        <p className="error-message" role="alert">
+          {erro}
+        </p>
+      )}
+      {code === undefined ? (
+        <p className="muted">Carregando…</p>
+      ) : code ? (
+        <>
+          <p className="join-code-value" aria-label="Código de professor">
+            {code}
+          </p>
+          <div className="join-code-actions">
+            <button
+              className="text-button"
+              type="button"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(code)
+                } catch {
+                  const area = document.createElement('textarea')
+                  area.value = code
+                  document.body.appendChild(area)
+                  area.select()
+                  document.execCommand('copy')
+                  area.remove()
+                }
+                setCopied(true)
+                setTimeout(() => setCopied(false), 2000)
+              }}
+            >
+              {copied ? <Check size={16} /> : <Copy size={16} />} {copied ? 'Copiado' : 'Copiar'}
+            </button>
+            <ActionButton
+              className="text-button"
+              confirm="Gerar um novo código? O código atual deixa de funcionar."
+              success="Novo código gerado."
+              action={async () => setCode(await call<string>('generate_prof_code'))}
+            >
+              <RefreshCw size={16} /> Gerar novo
+            </ActionButton>
+          </div>
+          {typeof navigator.share === 'function' && (
+            <ActionButton
+              className="secondary"
+              action={async () => {
+                await navigator.share({ title: 'Código de professor', text: message })
+              }}
+            >
+              <Share2 size={17} /> Compartilhar
+            </ActionButton>
+          )}
+        </>
+      ) : (
+        <p className="muted">Nenhum código de professor ainda.</p>
+      )}
+      <Field label="Definir código próprio">
+        <input
+          value={custom}
+          onChange={(e) => setCustom(e.target.value)}
+          placeholder="Ex.: PROF-ACADEMIA-2026"
+          minLength={8}
+          maxLength={128}
+        />
+      </Field>
+      <p className="field-help">Entre 8 e 128 caracteres.</p>
+      <ActionButton
+        className="secondary"
+        disabled={custom.trim().length < 8}
+        success="Código de professor salvo."
+        action={async () => {
+          await call('set_prof_code', { p_code: custom.trim() })
+          setCode(custom.trim())
+          setCustom('')
+        }}
+      >
+        Salvar código
+      </ActionButton>
+    </section>
+  )
+}
+
+/** Perfil do próprio professor: faixa, graus, contato e nascimento. */
+function MyProfileSection({
+  call,
+  mutate,
+  profileId,
+}: {
+  call: Call
+  mutate: Mutate
+  profileId: string
+}) {
+  const [me, setMe] = useState<StudentView | null>(null)
+  const [erro, setErro] = useState('')
+  const [edit, setEdit] = useState(false)
+  const reload = useCallback(() => {
+    call<StudentView>('student_detail', { p_student: profileId })
+      .then((v) => {
+        setErro('')
+        setMe(v)
+      })
+      .catch((e) => {
+        setMe(null)
+        setErro(friendlyError(e))
+      })
+  }, [call, profileId])
+  useEffect(() => {
+    reload()
+  }, [reload])
+  return (
+    <section className="settings-card">
+      <h2>Seu perfil.</h2>
+      {erro && (
+        <p className="error-message" role="alert">
+          {erro}
+        </p>
+      )}
+      {!me && !erro && <p className="muted">Carregando…</p>}
+      {me && (
+        <>
+          <p className="muted">
+            Faixa {me.belt} · {me.degrees} {me.degrees === 1 ? 'grau' : 'graus'} · Na equipe desde{' '}
+            {dateLabel(me.joinedAt)}.
+          </p>
+          <ActionButton
+            className="secondary"
+            action={async () => {
+              setEdit(true)
+            }}
+          >
+            <User size={17} /> Editar meu perfil
+          </ActionButton>
+          {edit && (
+            <StaffProfileSheet
+              m={me}
+              mutate={mutate}
+              onClose={() => {
+                setEdit(false)
+                reload()
+              }}
+            />
+          )}
+        </>
+      )}
+    </section>
+  )
+}
+
+/** O dono exclui a própria conta e elege um professor para assumir a equipe. */
+function DeleteAccount({
+  call,
+  owner,
+  demo,
+  onDeleted,
+}: {
+  call: Call
+  owner: boolean
+  demo: boolean
+  onDeleted: () => void
+}) {
+  const [staff, setStaff] = useState<StudentView[] | null>(null)
+  const [sucessor, setSucessor] = useState('')
+  useEffect(() => {
+    if (!owner) return
+    call<StudentView[]>('list_staff')
+      .then((s) => setStaff(s.filter((m) => m.role === 'professor')))
+      .catch(() => setStaff(null))
+  }, [call, owner])
+  if (!owner) return null
+  return (
+    <section className="settings-card">
+      <h2>Excluir minha conta.</h2>
+      <p className="muted">
+        A equipe passa para o professor escolhido. O que você registrou como professor (presenças,
+        avisos, aulas) fica com ele; seu histórico como aluno é apagado. Essa ação não pode ser
+        desfeita.
+      </p>
+      {demo ? (
+        <p className="muted">Indisponível na demonstração.</p>
+      ) : staff === null ? (
+        <p className="error-message" role="alert">
+          Não foi possível carregar a equipe técnica.
+        </p>
+      ) : staff.length === 0 ? (
+        <p className="muted">
+          Você precisa de um professor ativo na equipe para poder excluir sua conta — promova um
+          professor na aba Alunos ou compartilhe o código de professor.
+        </p>
+      ) : (
+        <>
+          <Field label="Professor que assume a equipe">
+            <select value={sucessor} onChange={(e) => setSucessor(e.target.value)}>
+              <option value="">Escolher…</option>
+              {staff.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <ActionButton
+            className="danger"
+            disabled={!sucessor}
+            confirm={`Excluir sua conta? ${
+              staff.find((m) => m.id === sucessor)?.name ?? 'O professor escolhido'
+            } assume a equipe. Essa ação não pode ser desfeita.`}
+            action={async () => {
+              await call('delete_my_account', { p_successor: sucessor })
+              onDeleted()
+            }}
+          >
+            <Trash2 size={17} /> Excluir minha conta
+          </ActionButton>
+        </>
       )}
     </section>
   )
@@ -1518,6 +2027,8 @@ function Settings({
   today,
   onChanged,
   onPreview,
+  profileId,
+  onDeleted,
 }: {
   goal: number | null
   mutate: Mutate
@@ -1528,6 +2039,8 @@ function Settings({
   today: string
   onChanged: () => Promise<void>
   onPreview: (cores: { p: string; a: string } | null) => void
+  profileId: string
+  onDeleted: () => void
 }) {
   const [value, setValue] = useState(goal?.toString() ?? ''),
     [name, setName] = useState(team?.name ?? ''),
@@ -1547,7 +2060,10 @@ function Settings({
   return (
     <>
       <JoinCode call={call} owner={owner} teamName={team?.name ?? 'da equipe'} />
+      {owner && <ProfCode call={call} />}
       {owner && <StaffSection call={call} mutate={mutate} />}
+      <MyProfileSection call={call} mutate={mutate} profileId={profileId} />
+      <DeleteAccount call={call} owner={owner} demo={demo} onDeleted={onDeleted} />
       <section className="settings-card">
         <h2>Do jeito da sua equipe.</h2>
         <p className="muted">Uma referência para acompanhar a constância dos alunos.</p>
@@ -2078,6 +2594,8 @@ export default function App() {
               today={data.today}
               onChanged={refresh}
               onPreview={setPreview}
+              profileId={data.profile.id}
+              onDeleted={logout}
             />
           ) : page === 'agenda' ? (
             <Agenda
@@ -2192,7 +2710,12 @@ export default function App() {
                     student={student}
                     goal={data.goal}
                     teacher
+                    call={call}
+                    mutate={mutate}
                     resolveAvatars={resolveAvatars}
+                    uploadAvatarFile={uploadAvatarFile}
+                    teamId={data.team?.id ?? ''}
+                    onChanged={refresh}
                   />
                   <History
                     key={student.id}

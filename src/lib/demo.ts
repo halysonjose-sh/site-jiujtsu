@@ -53,7 +53,14 @@ type DemoStudent = {
   joinedAt: string
 }
 const TEAM = 't-demo'
-const professor = { id: 'professor-demo', name: 'Rafael Costa', role: 'dono' as const, revision: 0 }
+const professor = {
+  id: 'professor-demo',
+  name: 'Rafael Costa',
+  role: 'dono' as const,
+  revision: 0,
+  contact: '(11) 97777-0001' as string | null,
+  birthDate: '1985-06-18' as string | null,
+}
 const prof: Actor = { id: professor.id, teamId: TEAM, role: 'dono' }
 const lucas: Actor = { id: 'lucas', teamId: TEAM, role: 'aluno' }
 
@@ -254,6 +261,10 @@ export function createDemo() {
   }
   // Papel de cada membro na equipe (o resto é aluno). O dono promove/rebaixa.
   let roles: Record<string, 'aluno' | 'professor'> = {}
+  // Quem é o dono hoje (muda quando um professor é eleito). O código de professor
+  // é o que o dono passa para um professor entrar direto na equipe.
+  let donoId = professor.id
+  let profCode: string | null = 'PROF-DEMO-2026'
   const student = (id: unknown) => {
     const s = students.find((x) => x.id === id)
     if (!s) throw new Error('Aluno não encontrado.')
@@ -315,6 +326,38 @@ export function createDemo() {
     }
   }
   let role: 'aluno' | 'professor' = 'aluno'
+  // O dono da demonstração tem faixa preta fixa: o perfil dele aparece na
+  // Configurações e na lista da equipe técnica.
+  const profView = (): StudentView => ({
+    id: professor.id,
+    name: professor.name,
+    role: donoId === professor.id ? 'dono' : 'professor',
+    memberStatus: 'ativo',
+    revision: 0,
+    belt: 'preta',
+    degrees: 0,
+    total: 0,
+    cycle: 0,
+    today,
+    initialSet: true,
+    held: 0,
+    avatarPath: null,
+    contact: professor.contact,
+    birthDate: professor.birthDate,
+    joinedAt: addDays(today, -400),
+    attendances: [],
+    events: [
+      {
+        id: 'initial-prof',
+        kind: 'initial',
+        belt: 'preta',
+        degrees: 0,
+        date: addDays(today, -400),
+        note: null,
+        cancelled: false,
+      },
+    ],
+  })
   let photos: { id: string; sessionId: string; path: string; caption: string | null }[] = []
   // Avisos de exemplo: a tela nasce mostrando o funcionamento; o professor apaga quando quiser.
   // Mesma forma do RPC list_announcements (snake_case).
@@ -652,11 +695,44 @@ export function createDemo() {
       const nome = a.p_name == null ? null : String(a.p_name).trim()
       if (nome != null && (nome.length < 2 || nome.length > 80))
         throw new Error('O nome deve ter entre 2 e 80 caracteres.')
-      const me = role === 'aluno' ? student('lucas') : null
-      if (!me) throw new Error('Somente alunos editam o próprio perfil na demonstração.')
+      const me = role === 'aluno' ? student('lucas') : professor
       if (nome) me.name = nome
       me.contact = contato || null
       me.birthDate = nasc
+    },
+    update_member_profile: (a) => {
+      if (role !== 'professor') throw new Error('Somente professores editam perfis.')
+      const alvoId = String(a.p_user)
+      const alvoStaff = alvoId === prof.id || roles[alvoId] === 'professor'
+      if (alvoStaff && alvoId !== prof.id && donoId !== prof.id)
+        throw new Error('Somente o dono edita o perfil da equipe técnica.')
+      const contato = String(a.p_contact ?? '').trim()
+      if (contato.length > 120) throw new Error('O contato deve ter até 120 caracteres.')
+      const nasc = a.p_birth_date ?? null
+      if (nasc && nasc > today) throw new Error('Data de nascimento inválida.')
+      const nome = a.p_name == null ? null : String(a.p_name).trim()
+      if (nome != null && (nome.length < 2 || nome.length > 80))
+        throw new Error('O nome deve ter entre 2 e 80 caracteres.')
+      if (alvoId === prof.id) {
+        if (nome) professor.name = nome
+        professor.contact = contato || null
+        professor.birthDate = nasc
+        return
+      }
+      const s = student(alvoId)
+      if (nome) s.name = nome
+      s.contact = contato || null
+      s.birthDate = nasc
+    },
+    student_detail: (a) => {
+      const alvoId = String(a.p_student)
+      if (alvoId === prof.id) {
+        if (role !== 'professor') throw new Error('Acesso não permitido.')
+        return profView()
+      }
+      const s = student(alvoId)
+      if (role !== 'professor' && s.id !== 'lucas') throw new Error('Acesso não permitido.')
+      return view(s)
     },
     set_avatar: (a) => {
       const me = role === 'aluno' ? student('lucas') : null
@@ -672,7 +748,7 @@ export function createDemo() {
       s.memberStatus = a.p_status
     },
     set_member_role: (a) => {
-      if (role !== 'professor') throw new Error('Somente o dono altera papéis.')
+      if (donoId !== prof.id) throw new Error('Somente o dono altera papéis.')
       if (a.p_user === prof.id) throw new Error('Você não pode alterar o próprio papel.')
       const papel = a.p_role
       if (papel !== 'aluno' && papel !== 'professor') throw new Error('Papel inválido.')
@@ -681,11 +757,37 @@ export function createDemo() {
       // Espelha o SQL: promover reativa o membro; rebaixar também.
       if (s.memberStatus === 'pendente') s.memberStatus = 'ativo'
     },
+    transfer_ownership: (a) => {
+      if (donoId !== prof.id) throw new Error('Somente o dono da equipe pode fazer isso.')
+      const s = student(a.p_user)
+      if (roles[s.id] !== 'professor') throw new Error('Escolha um professor ativo da equipe.')
+      // O antigo dono volta a ser professor; a equipe nunca fica sem dono.
+      roles[professor.id] = 'professor'
+      donoId = s.id
+    },
+    get_prof_code: () => {
+      if (donoId !== prof.id) throw new Error('Somente o dono da equipe pode fazer isso.')
+      return profCode
+    },
+    generate_prof_code: () => {
+      if (donoId !== prof.id) throw new Error('Somente o dono da equipe pode fazer isso.')
+      const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+      const pick = () => abc[Math.floor(Math.random() * abc.length)]
+      profCode = Array.from({ length: 8 }, pick).join('').replace(/^(.{4})/, '$1-')
+      return profCode
+    },
+    set_prof_code: (a) => {
+      if (donoId !== prof.id) throw new Error('Somente o dono da equipe pode fazer isso.')
+      const code = String(a.p_code ?? '').trim()
+      if (code.length < 8 || code.length > 128)
+        throw new Error('O código deve ter entre 8 e 128 caracteres.')
+      profCode = code
+    },
     list_staff: () => [
-      { id: prof.id, name: professor.name, role: 'dono' },
+      profView(),
       ...students
         .filter((s) => roles[s.id] === 'professor')
-        .map((s) => ({ id: s.id, name: s.name, role: 'professor' })),
+        .map((s) => ({ ...view(s), role: s.id === donoId ? ('dono' as const) : ('professor' as const) })),
     ],
     update_session: (a) => {
       if (role !== 'professor') throw new Error('Somente o professor edita aulas.')
@@ -733,7 +835,7 @@ export function createDemo() {
       role = as
       const me =
         as === 'professor'
-          ? professor
+          ? { ...professor, role: donoId === professor.id ? ('dono' as const) : ('professor' as const) }
           : { id: 'lucas', name: student('lucas').name, role: 'aluno' as const, revision: 0 }
       return {
         profile: me,

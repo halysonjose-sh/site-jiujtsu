@@ -680,17 +680,17 @@ describe('perfil do aluno: contato, nascimento, avatar e status inativo', () => 
     ).rejects.toThrow()
   })
   it('dono promove aluno a professor e lista a equipe técnica; guarda de papel vale', async () => {
-    const staffRows = () => asUser(teacher, 'select * from public.list_staff()').then((r) => r.rows)
-    // o dono está na lista; o aluno comum não
-    expect((await staffRows()).some((m: any) => m.role === 'dono')).toBe(true)
-    expect((await staffRows()).some((m: any) => m.id === novo)).toBe(false)
+    const staff = () => one(teacher, 'select public.list_staff()')
+    // o dono está na lista (com o resumo completo); o aluno comum não
+    expect((await staff()).some((m: any) => m.role === 'dono')).toBe(true)
+    expect((await staff()).some((m: any) => m.id === novo)).toBe(false)
     // aluno não altera papéis
     await expect(
       asUser(novo, 'select public.set_member_role($1,$2)', [novo, 'professor']),
     ).rejects.toThrow()
     // dono promove; promovido aparece no staff e sai da lista de alunos
     await asUser(teacher, 'select public.set_member_role($1,$2)', [novo, 'professor'])
-    expect((await staffRows()).some((m: any) => m.id === novo && m.role === 'professor')).toBe(true)
+    expect((await staff()).some((m: any) => m.id === novo && m.role === 'professor')).toBe(true)
     const alunos = await one(teacher, 'select public.list_students()')
     expect(alunos.some((s: any) => s.id === novo)).toBe(false)
     // dono não altera o próprio papel nem um dono
@@ -837,5 +837,167 @@ describe('mvp: criar turma, editar aula e avisos', () => {
     await expect(
       asUser(teacher, 'select public.delete_announcement($1)', [avisoId]),
     ).rejects.toThrow(/não encontrado/i)
+  })
+})
+
+describe('perfil e graduação da equipe técnica', () => {
+  it('dono define situação inicial, dá grau e faixa a um professor; professor comum não gradua professor', async () => {
+    await asUser(teacher, "select public.set_member_role($1,'professor')", [b])
+    await asUser(teacher, "select public.set_initial($1,'roxa',1,0,'Faixa em outra academia')", [b])
+    let d = await one(teacher, 'select public.student_detail($1)', [b])
+    expect([d.belt, d.degrees, d.initialSet]).toEqual(['roxa', 1, true])
+    await asUser(teacher, "select public.set_member_role($1,'professor')", [a])
+    await expect(
+      asUser(a, "select public.graduate_student($1,'grau',gen_random_uuid(),$2)", [b, d.revision]),
+    ).rejects.toThrow(/dono/)
+    await asUser(teacher, "select public.set_member_role($1,'aluno')", [a])
+    const rev = (await one(teacher, 'select public.student_detail($1)', [b])).revision
+    await asUser(teacher, "select public.graduate_student($1,'grau',gen_random_uuid(),$2)", [b, rev])
+    d = await one(teacher, 'select public.student_detail($1)', [b])
+    expect([d.belt, d.degrees]).toEqual(['roxa', 2])
+    await asUser(teacher, "select public.graduate_student($1,'faixa',gen_random_uuid(),$2)", [
+      b,
+      d.revision,
+    ])
+    d = await one(teacher, 'select public.student_detail($1)', [b])
+    expect([d.belt, d.degrees]).toEqual(['marrom', 0])
+    await asUser(teacher, 'select public.undo_graduation($1,$2,$3)', [
+      b,
+      d.events.find((e: any) => e.kind === 'faixa' && !e.cancelled).id,
+      d.revision,
+    ])
+    d = await one(teacher, 'select public.student_detail($1)', [b])
+    expect([d.belt, d.degrees]).toEqual(['roxa', 2])
+  })
+  it('dono edita o perfil de um professor; professor edita aluno; aluno não edita ninguém', async () => {
+    await asUser(teacher, "select public.update_member_profile($1,'Bruno Silva','(11) 90000-0001','1990-01-02')", [b])
+    const d = await one(teacher, 'select public.student_detail($1)', [b])
+    expect([d.name, d.contact, d.birthDate]).toEqual(['Bruno Silva', '(11) 90000-0001', '1990-01-02'])
+    await asUser(b, "select public.update_member_profile($1,'Novo Nome Aluno',null,null)", [a])
+    expect((await one(teacher, 'select public.student_detail($1)', [a])).name).toBe('Novo Nome Aluno')
+    await asUser(teacher, "select public.set_member_role($1,'professor')", [a])
+    await expect(asUser(a, "select public.update_member_profile($1,'X Y',null,null)", [b])).rejects.toThrow(/dono/)
+    await asUser(teacher, "select public.set_member_role($1,'aluno')", [a])
+    await expect(asUser(a, "select public.update_member_profile($1,'X Y',null,null)", [b])).rejects.toThrow()
+    await expect(asUser(teacher, "select public.update_member_profile($1,'A',null,null)", [b])).rejects.toThrow(/2 e 80/)
+    await expect(
+      asUser(teacher, 'select public.update_member_profile($1,null,$2,null)', [b, 'x'.repeat(121)]),
+    ).rejects.toThrow(/120/)
+    await expect(
+      asUser(teacher, 'select public.update_member_profile($1,null,null,public.today_sp()+1)', [b]),
+    ).rejects.toThrow()
+    await expect(
+      asUser(outroProf, "select public.update_member_profile($1,'X Y',null,null)", [b]),
+    ).rejects.toThrow(/Membro/)
+    await asUser(teacher, "select public.update_member_profile($1,'Dona Atualizada',null,null)", [teacher])
+    expect((await one(teacher, 'select public.student_detail($1)', [teacher])).name).toBe('Dona Atualizada')
+  })
+})
+
+describe('código de professor', () => {
+  it('dono gera e define o código de professor; professor e aluno não veem', async () => {
+    const code = await one(teacher, 'select public.generate_prof_code()')
+    expect(code).toMatch(/^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/)
+    expect(await one(teacher, 'select public.get_prof_code()')).toBe(code)
+    await expect(asUser(b, 'select public.get_prof_code()')).rejects.toThrow(/dono/)
+    await expect(asUser(a, 'select public.get_prof_code()')).rejects.toThrow()
+    await asUser(teacher, "select public.set_prof_code('PROF-2026-XYZ')")
+    expect(await one(teacher, 'select public.get_prof_code()')).toBe('PROF-2026-XYZ')
+    await expect(asUser(teacher, "select public.set_prof_code('curto')")).rejects.toThrow(/8 e 128/)
+    await expect(asUser(teacher, "select public.set_prof_code('OUTRA-EQUIPE')")).rejects.toThrow(/outro/)
+    await expect(asUser(b, "select public.set_prof_code('TENTATIVA-1')")).rejects.toThrow(/dono/)
+  })
+  it('cadastro com código de professor entra direto como professor ativo', async () => {
+    await signup(id(30), await one(teacher, 'select public.get_prof_code()'))
+    expect(
+      (await db.query('select role,status from public.team_members where user_id=$1', [id(30)])).rows,
+    ).toEqual([{ role: 'professor', status: 'ativo' }])
+    expect(await one(id(30), 'select public.is_teacher()')).toBe(true)
+    expect((await one(teacher, 'select public.student_detail($1)', [id(30)])).role).toBe('professor')
+    expect((await one(teacher, 'select public.list_staff()')).some((m: any) => m.id === id(30))).toBe(true)
+    // código de equipe continua criando aluno pendente
+    await signup(id(31), await one(teacher, 'select public.get_join_code()'))
+    expect(
+      (await db.query('select role,status from public.team_members where user_id=$1', [id(31)])).rows,
+    ).toEqual([{ role: 'aluno', status: 'pendente' }])
+    await expect(signup(id(32), 'ERRADO-999')).rejects.toThrow(/Código/)
+  })
+})
+
+describe('eleger dono e excluir conta', () => {
+  it('dono elege um professor; papéis trocam; antigo dono vira professor', async () => {
+    await asUser(teacher, 'select public.transfer_ownership($1)', [b])
+    const roles = (
+      await db.query<any>(
+        'select user_id, role from public.team_members where user_id in ($1,$2) and team_id=(select id from public.teams where slug=$3)',
+        [teacher, b, 'minha-turma'],
+      )
+    ).rows.sort((x: any, y: any) => x.user_id.localeCompare(y.user_id))
+    expect(roles).toEqual(
+      [
+        { user_id: b, role: 'dono' },
+        { user_id: teacher, role: 'professor' },
+      ].sort((x, y) => x.user_id.localeCompare(y.user_id)),
+    )
+    await expect(asUser(teacher, 'select public.transfer_ownership($1)', [b])).rejects.toThrow(/dono/)
+    await asUser(b, 'select public.transfer_ownership($1)', [teacher])
+    await expect(asUser(teacher, 'select public.transfer_ownership($1)', [a])).rejects.toThrow(/professor/)
+    await expect(asUser(teacher, 'select public.transfer_ownership($1)', [teacher])).rejects.toThrow(/já é o dono/)
+    await expect(asUser(outroProf, 'select public.transfer_ownership($1)', [outroAluno])).rejects.toThrow(/professor/)
+    await expect(asUser(teacher, 'select public.transfer_ownership($1)', [id(31)])).rejects.toThrow(/professor/)
+  })
+  it('dono exclui a conta com sucessor: sucessor assume e os registros passam adiante', async () => {
+    await db.query(
+      'insert into auth.users(id,email,raw_user_meta_data) values ($1,$2,$3::jsonb)',
+      [id(40), id(40) + '@test.local', JSON.stringify({ name: 'Dona Sai', new_team: 'Equipe Exclusao' })],
+    )
+    const team = (await db.query<any>("select * from public.teams where name='Equipe Exclusao'")).rows[0]
+    await db.query(
+      "update public.teams set prof_code_hash=encode(sha256(convert_to(prof_code_salt || 'PROF-EXCLUIR-1','UTF8')),'hex') where id=$1",
+      [team.id],
+    )
+    await signup(id(41), 'PROF-EXCLUIR-1')
+    expect(
+      (await db.query('select role,status from public.team_members where user_id=$1', [id(41)])).rows,
+    ).toEqual([{ role: 'professor', status: 'ativo' }])
+    await signup(id(42), team.join_code)
+    await asUser(id(40), 'select public.approve_member($1,true)', [id(42)])
+    await asUser(id(40), "select public.create_schedule('Adulto','{1}',time '19:00',60,public.today_sp())")
+    const s = await sessionAt('-2 hours', 'realizada', team.id)
+    await asUser(id(40), 'select public.teacher_add_presence($1,$2)', [s, id(42)])
+    await asUser(id(40), "select public.set_initial($1,'branca',0,0)", [id(42)])
+    const aviso = await one(id(40), 'select public.create_announcement($1) as id', ['Aviso da dona'])
+    await asUser(id(40), 'select public.delete_my_account($1)', [id(41)])
+    expect((await db.query('select * from public.profiles where id=$1', [id(40)])).rows).toHaveLength(0)
+    expect((await db.query('select * from public.team_members where user_id=$1', [id(40)])).rows).toHaveLength(0)
+    expect((await db.query('select role from public.team_members where user_id=$1', [id(41)])).rows).toEqual([
+      { role: 'dono' },
+    ])
+    expect((await one(id(41), 'select public.student_detail($1)', [id(42)])).total).toBe(1)
+    expect(
+      (await db.query('select actor_id from public.attendances where session_id=$1', [s])).rows[0]
+        .actor_id,
+    ).toBe(id(41))
+    expect(
+      (await db.query('select actor_id from public.graduations where student_id=$1', [id(42)])).rows[0]
+        .actor_id,
+    ).toBe(id(41))
+    expect(Number(await one(id(41), 'select count(*) from public.announcements'))).toBe(1)
+    expect((await db.query('select author_id from public.announcements where id=$1', [aviso])).rows[0].author_id).toBe(id(41))
+    expect(
+      (await db.query('select created_by from public.class_schedules where team_id=$1', [team.id])).rows[0]
+        .created_by,
+    ).toBe(id(41))
+    await expect(asUser(id(41), 'select public.delete_my_account()')).rejects.toThrow(/professor para assumir/)
+    await expect(asUser(id(41), 'select public.delete_my_account($1)', [outroAluno])).rejects.toThrow(/professor/)
+  })
+  it('aluno exclui a própria conta: histórico some, aulas e equipe ficam', async () => {
+    const team = (await db.query<any>("select id from public.teams where name='Equipe Exclusao'")).rows[0].id
+    await asUser(id(42), 'select public.delete_my_account()')
+    expect((await db.query('select * from public.profiles where id=$1', [id(42)])).rows).toHaveLength(0)
+    expect((await db.query('select * from public.attendances where student_id=$1', [id(42)])).rows).toHaveLength(0)
+    expect((await db.query('select * from public.graduations where student_id=$1', [id(42)])).rows).toHaveLength(0)
+    expect(await n('select count(*) from public.class_sessions where team_id=$1', [team])).toBeGreaterThan(0)
+    expect(await one(id(41), 'select public.list_students()')).toHaveLength(0)
   })
 })
