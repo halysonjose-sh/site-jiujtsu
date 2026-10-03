@@ -247,7 +247,7 @@ describe('Today', () => {
 
   it('estado vazio quando não há aula hoje', async () => {
     setup([])
-    expect(await screen.findByText('Nenhuma aula hoje.')).toBeTruthy()
+    expect(await screen.findByText(/Nenhuma aula hoje\./)).toBeTruthy()
   })
 
   it('Fotos do treino navega para a tela da aula', async () => {

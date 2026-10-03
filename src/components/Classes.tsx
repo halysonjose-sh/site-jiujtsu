@@ -856,6 +856,16 @@ function NewSessionForm({
     new Date(),
   )
   const conflicts = plan.startsAt ? overlapping(existing, plan.startsAt, duration) : []
+  // Erro de cada campo, casado pela mensagem do plano; o resto fica na lista geral.
+  const fieldError = (re: RegExp) => (tried ? plan.errors.find((m) => re.test(m)) : undefined)
+  const errTitle = fieldError(/nome/i),
+    errDuration = fieldError(/dura/i),
+    errDate = fieldError(/data/i),
+    errTime = fieldError(/hor/i),
+    errPresent = fieldError(/presen/i)
+  const otherErrors = tried
+    ? plan.errors.filter((m) => ![errTitle, errDuration, errDate, errTime, errPresent].includes(m))
+    : []
   async function save() {
     setTried(true)
     setError('')
@@ -904,9 +914,13 @@ function NewSessionForm({
       <div className="section-heading">
         <h3>Nova aula</h3>
       </div>
+      <h4 className="panel-subtitle">
+        <CalendarClock size={16} /> Dados da aula
+      </h4>
       <label className="field">
         <span>Nome da aula</span>
         <input value={title} maxLength={80} onChange={(e) => setTitle(e.target.value)} />
+        {errTitle && <span className="field-error">{errTitle}</span>}
       </label>
       <div className="form-grid">
         <label className="field">
@@ -917,10 +931,12 @@ function NewSessionForm({
             max={addDays(today, 365)}
             onChange={(e) => setDate(e.target.value)}
           />
+          {errDate && <span className="field-error">{errDate}</span>}
         </label>
         <label className="field">
           <span>Horário</span>
           <input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+          {errTime && <span className="field-error">{errTime}</span>}
         </label>
       </div>
       <label className="field">
@@ -933,6 +949,7 @@ function NewSessionForm({
           value={Number.isNaN(duration) ? '' : duration}
           onChange={(e) => setDuration(e.target.value === '' ? NaN : Number(e.target.value))}
         />
+        {errDuration && <span className="field-error">{errDuration}</span>}
       </label>
       <label className="field">
         <span>Descrição (opcional)</span>
@@ -962,16 +979,21 @@ function NewSessionForm({
         </label>
       )}
       {plan.startsAt && plan.past ? (
-        <Roster
-          entries={roster}
-          checked={present}
-          onToggle={(id, on) => {
-            const next = new Set(present)
-            if (on) next.add(id)
-            else next.delete(id)
-            setPresent(next)
-          }}
-        />
+        <>
+          <h4 className="panel-subtitle">
+            <Users size={16} /> Presenças
+          </h4>
+          <Roster
+            entries={roster}
+            checked={present}
+            onToggle={(id, on) => {
+              const next = new Set(present)
+              if (on) next.add(id)
+              else next.delete(id)
+              setPresent(next)
+            }}
+          />
+        </>
       ) : (
         plan.startsAt && (
           <p className="field-help">
@@ -980,9 +1002,12 @@ function NewSessionForm({
           </p>
         )
       )}
-      {tried && plan.errors.length > 0 && (
+      {/* Fora do ramo da aula passada: presenças marcadas em aula que virou futura
+          precisam do erro visível, senão o botão trava sem explicação. */}
+      {errPresent && <p className="field-error">{errPresent}</p>}
+      {otherErrors.length > 0 && (
         <ul className="error-message" role="alert">
-          {plan.errors.map((m) => (
+          {otherErrors.map((m) => (
             <li key={m}>{m}</li>
           ))}
         </ul>
@@ -990,6 +1015,13 @@ function NewSessionForm({
       {error && (
         <p className="error-message" role="alert">
           {error}
+        </p>
+      )}
+      {plan.startsAt && (
+        <p className="session-summary" role="status">
+          Resumo: {title.trim() || 'Aula'} · {dayLabel(plan.startsAt)} às {timeLabel(plan.startsAt)}{' '}
+          · {Number.isFinite(duration) ? duration : '—'} min
+          {plan.past ? ' · aula que já começou' : ''}
         </p>
       )}
       <button className="primary" disabled={!!saving} onClick={() => void save()}>

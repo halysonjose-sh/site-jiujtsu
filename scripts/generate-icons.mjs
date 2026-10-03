@@ -12,8 +12,8 @@ const mark = (belt, line) => `
   <path d="M27 18.5 L37 32.5" stroke="${line}" stroke-width="1.8" stroke-linecap="round" opacity=".45"/>`
 const icon = (radius, scale) =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="${radius}" fill="#234c3a"/>
-  <g transform="translate(256 262) scale(${scale}) translate(-32 -36)">${mark('#f6f5ef', '#234c3a')}</g></svg>`
+  <rect width="512" height="512" rx="${radius}" fill="#1d3557"/>
+  <g transform="translate(256 262) scale(${scale}) translate(-32 -36)">${mark('#f7f6f2', '#1d3557')}</g></svg>`
 for (const size of [192, 512])
   await sharp(Buffer.from(icon(100, 6.4))).resize(size, size).png().toFile(`public/icon-${size}.png`)
 // Maskable: o sistema recorta as bordas, então a marca fica dentro da área segura (80%).

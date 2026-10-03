@@ -18,6 +18,8 @@ import {
   EyeOff,
   GraduationCap,
   LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   Search,
   Settings2,
@@ -74,7 +76,7 @@ import { frequencyRate, streak } from './domain/frequency'
 
 /** Aplica o visual da equipe no :root: cores principais e escala legível da sidebar. */
 function aplicarVisual(root: CSSStyleDeclaration, primary: string, accent: string) {
-  root.setProperty('--green', primary)
+  root.setProperty('--primary', primary)
   root.setProperty('--accent', accent)
   const esc = escalaSidebar(accent)
   if (esc) {
@@ -90,7 +92,7 @@ function aplicarVisual(root: CSSStyleDeclaration, primary: string, accent: strin
 /** Volta ao visual padrão do Tatame (sem equipe carregada ou cor inválida). */
 function limparVisual(root: CSSStyleDeclaration) {
   for (const t of [
-    '--green',
+    '--primary',
     '--accent',
     '--side-text',
     '--side-weak',
@@ -344,7 +346,10 @@ function Avisos({ call, staff }: { call: Call; staff: boolean }) {
         </p>
       )}
       {itens === null ? null : itens.length === 0 ? (
-        <p className="empty">Nenhum aviso publicado.</p>
+        <p className="empty">
+          Nenhum aviso publicado.
+          {staff ? ' Use o campo acima para avisar a equipe sobre mudanças de horário, eventos ou recados.' : ' Os avisos da equipe aparecem aqui.'}
+        </p>
       ) : (
         itens.map((n) => (
           <article className="announcement" key={n.id}>
@@ -636,7 +641,12 @@ function Auth({
           )}
           {!recovery && (
             <button className="demo-entry" onClick={onDemo}>
-              Conhecer a demonstração <ArrowRight size={16} />
+              <span className="demo-entry-head">
+                Conhecer a demonstração <ArrowRight size={16} />
+              </span>
+              <span className="demo-entry-detail">
+                Presença, graduação, agenda e gestão com dados fictícios — nada é salvo.
+              </span>
             </button>
           )}
           <Install />
@@ -2044,8 +2054,8 @@ function Settings({
 }) {
   const [value, setValue] = useState(goal?.toString() ?? ''),
     [name, setName] = useState(team?.name ?? ''),
-    [primary, setPrimary] = useState(team?.primaryColor ?? '#234c3a'),
-    [accent, setAccent] = useState(team?.accentColor ?? '#cee68b'),
+    [primary, setPrimary] = useState(team?.primaryColor ?? '#1d3557'),
+    [accent, setAccent] = useState(team?.accentColor ?? '#e9c46a'),
     [logoError, setLogoError] = useState('')
   // Pré-visualização ao vivo: o App aplica as cores escolhidas; ao desmontar
   // (salvar ou sair da página) o preview é limpo e o visual salvo volta a valer.
@@ -2217,6 +2227,10 @@ export default function App() {
     [search, setSearch] = useState(''),
     [reviewsToday, setReviewsToday] = useState(0),
     [jump, setJump] = useState<{ id: string; nonce: number } | null>(null),
+    // Sidebar do desktop: recolhida para uma barra de ícones; escolha persistida.
+    [sidebarOpen, setSidebarOpen] = useState(
+      () => localStorage.getItem('tatame-sidebar') !== 'recolhida',
+    ),
     // Pré-visualização do editor de visual: cores aplicadas antes de salvar.
     [preview, setPreview] = useState<{ p: string; a: string } | null>(null)
   const generation = useRef(0)
@@ -2328,7 +2342,7 @@ export default function App() {
       document.querySelector('meta[name="theme-color"]')?.setAttribute('content', cores?.p ?? team.primaryColor)
       document.title = `${team.name} · Tatame`
     } else {
-      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#234c3a')
+      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#1d3557')
       document.title = 'Tatame · Minha equipe'
     }
   }, [team, preview])
@@ -2448,6 +2462,12 @@ export default function App() {
     // futura à Agenda reabriria a última aula saltada.
     setJump(null)
   }
+  function toggleSidebar() {
+    setSidebarOpen((aberta) => {
+      localStorage.setItem('tatame-sidebar', aberta ? 'recolhida' : 'aberta')
+      return !aberta
+    })
+  }
   /** Vem da aba Hoje ("Fotos do treino"): abre a aula na Agenda uma vez. */
   function openSession(id: string) {
     setJump({ id, nonce: Date.now() })
@@ -2475,13 +2495,28 @@ export default function App() {
           </button>
         </div>
       )}
-      <aside className="sidebar">
+      <aside className={'sidebar' + (sidebarOpen ? '' : ' collapsed')}>
+        <button
+          type="button"
+          className="icon-button sidebar-toggle"
+          aria-label={sidebarOpen ? 'Recolher menu' : 'Expandir menu'}
+          aria-expanded={sidebarOpen}
+          title={sidebarOpen ? 'Recolher menu' : 'Expandir menu'}
+          onClick={toggleSidebar}
+        >
+          {sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
+        </button>
         <Brand team={data?.team} />
         <span className="sidebar-label">{(data.team?.name ?? 'Minha equipe').toUpperCase()}</span>
         <nav aria-label="Navegação principal">
           {pages.map((p) => (
-            <button key={p.id} className={page === p.id ? 'active' : ''} onClick={() => nav(p.id)}>
-              {p.icon} {p.label}
+            <button
+              key={p.id}
+              className={page === p.id ? 'active' : ''}
+              title={sidebarOpen ? undefined : p.label}
+              onClick={() => nav(p.id)}
+            >
+              {p.icon} <span className="sidebar-text">{p.label}</span>
             </button>
           ))}
         </nav>
@@ -2495,7 +2530,7 @@ export default function App() {
                 .slice(0, 2)
                 .join('')}
             </span>
-            <div>
+            <div className="sidebar-text">
               <strong>{data.profile.name}</strong>
               <span>{owner ? 'Dono da equipe' : teacher ? 'Professor' : 'Aluno'}</span>
             </div>
@@ -2620,6 +2655,7 @@ export default function App() {
                   onChanged={refresh}
                   onOpenSession={openSession}
                   onCounts={setReviewsToday}
+                  staff
                 />
                 <Avisos call={call} staff />
               </>

@@ -8,17 +8,17 @@
     BlinkMacSystemFont,
     'Segoe UI',
     sans-serif;
-  color: #263b32;
-  background: #f6f5ef;
+  color: #26323c;
+  background: #f7f6f2;
   font-synthesis: none;
   font-weight: 400;
   line-height: 1.5;
   font-size: 16px;
-  --green: #234c3a;
-  --muted: #5f6b60;
-  --line: #e2e5dc;
-  --cream: #f6f5ef;
-  --accent: #cee68b;
+  --primary: #1d3557;
+  --muted: #5b6472;
+  --line: #e4e2da;
+  --cream: #f7f6f2;
+  --accent: #e9c46a;
   --touch: 44px;
   --fs-min: 13px;
 }
@@ -54,12 +54,12 @@ button:not(:disabled):active {
 }
 button:focus-visible,
 a:focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--green) 75%, #fff);
+  outline: 3px solid color-mix(in srgb, var(--primary) 75%, #fff);
   outline-offset: 4px;
 }
 input:focus,
 select:focus {
-  outline: 2px solid color-mix(in srgb, var(--green) 75%, #fff);
+  outline: 2px solid color-mix(in srgb, var(--primary) 75%, #fff);
   outline-offset: 2px;
 }
 h1,
@@ -103,7 +103,7 @@ svg {
   color: #5d695e;
 }
 .primary {
-  background: var(--green);
+  background: var(--primary);
   color: white;
   padding: 12px 20px;
   border-radius: 9px;
@@ -111,23 +111,23 @@ svg {
   font-size: 14px;
 }
 .primary:not(:disabled):hover {
-  background: var(--green);
+  background: var(--primary);
 }
 .secondary {
   background: white;
-  border: 1px solid color-mix(in srgb, var(--green) 30%, #fff);
-  color: var(--green);
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, #fff);
+  color: var(--primary);
   padding: 10px 17px;
   border-radius: 9px;
   font-size: 14px;
   font-weight: 600;
 }
 .secondary:hover {
-  background: color-mix(in srgb, var(--green) 9%, #fff);
+  background: color-mix(in srgb, var(--primary) 9%, #fff);
 }
 .text-button {
   background: none;
-  color: var(--green);
+  color: var(--primary);
   font-size: 14px;
   font-weight: 600;
   padding: 2px 0;
@@ -147,7 +147,7 @@ svg {
   padding: 0;
 }
 .icon-button:hover {
-  background: color-mix(in srgb, var(--green) 9%, #fff);
+  background: color-mix(in srgb, var(--primary) 9%, #fff);
 }
 .danger {
   color: #a24939;
@@ -168,7 +168,7 @@ svg {
   display: block;
   width: 34px;
   height: 34px;
-  color: var(--green);
+  color: var(--primary);
   flex-shrink: 0;
 }
 .field {
@@ -183,7 +183,7 @@ svg {
 .field select {
   width: 100%;
   min-width: 0;
-  border: 1px solid color-mix(in srgb, var(--green) 9%, #fff);
+  border: 1px solid color-mix(in srgb, var(--primary) 9%, #fff);
   border-radius: 8px;
   background: white;
   padding: 12px 13px;
@@ -200,6 +200,22 @@ svg {
   color: var(--muted);
   margin: 8px 0 18px;
 }
+.field-error {
+  display: block;
+  font-size: 12.5px;
+  color: #b3261e;
+  margin-top: 4px;
+}
+.session-summary {
+  font-size: 13px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--primary) 6%, #fff);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 9px 12px;
+  margin: 14px 0 10px;
+  font-variant-numeric: tabular-nums;
+}
 .error-message,
 .success-message {
   font-size: 14px;
@@ -213,8 +229,8 @@ svg {
   background: #fff0e9;
 }
 .success-message {
-  color: var(--green);
-  background: color-mix(in srgb, var(--green) 9%, #fff);
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 9%, #fff);
 }
 .action-wrap {
   min-width: 0;
@@ -224,7 +240,7 @@ svg {
 }
 .notice {
   padding: 12px 18px;
-  background: color-mix(in srgb, var(--green) 9%, #fff);
+  background: color-mix(in srgb, var(--primary) 9%, #fff);
   border-radius: 8px;
   margin-bottom: 18px;
   font-size: 14px;
@@ -260,7 +276,7 @@ dialog {
   background: #fffef9;
   border-radius: 16px;
   padding: 28px;
-  color: #263b32;
+  color: #26323c;
   max-width: 420px;
   width: calc(100% - 32px);
   margin: auto;
@@ -293,8 +309,8 @@ dialog p {
 }
 .auth-story {
   position: relative;
-  background: var(--green);
-  color: color-mix(in srgb, var(--green) 9%, #fff);
+  background: var(--primary);
+  color: color-mix(in srgb, var(--primary) 9%, #fff);
   padding: 48px 60px;
   overflow: hidden;
   display: flex;
@@ -312,7 +328,7 @@ dialog p {
   z-index: 1;
 }
 .story-content .eyebrow {
-  color: color-mix(in srgb, var(--green) 30%, #fff);
+  color: color-mix(in srgb, var(--primary) 30%, #fff);
 }
 .story-content h1 {
   font-size: clamp(42px, 4.7vw, 74px);
@@ -323,13 +339,13 @@ dialog p {
 }
 .story-content > p {
   font-size: 17px;
-  color: color-mix(in srgb, var(--green) 30%, #fff);
+  color: color-mix(in srgb, var(--primary) 30%, #fff);
   max-width: 260px;
 }
 .story-footer {
   font-size: 10px;
   letter-spacing: 0.23em;
-  color: color-mix(in srgb, var(--green) 30%, #fff);
+  color: color-mix(in srgb, var(--primary) 30%, #fff);
   z-index: 2;
 }
 .gi-art {
@@ -349,12 +365,12 @@ dialog p {
     90deg,
     #e3e4d5 0,
     #e3e4d5 4px,
-    color-mix(in srgb, var(--green) 30%, #fff) 4px,
-    color-mix(in srgb, var(--green) 30%, #fff) 5px
+    color-mix(in srgb, var(--primary) 30%, #fff) 4px,
+    color-mix(in srgb, var(--primary) 30%, #fff) 5px
   );
   box-shadow:
     inset 0 0 0 12px #ebecdb,
-    inset 0 0 0 14px color-mix(in srgb, var(--green) 30%, #fff),
+    inset 0 0 0 14px color-mix(in srgb, var(--primary) 30%, #fff),
     10px 0 35px #11251d40;
 }
 .fold-left {
@@ -380,7 +396,7 @@ dialog p {
   display: inline-block;
   width: 9px;
   height: 61px;
-  background: color-mix(in srgb, var(--green) 9%, #fff);
+  background: color-mix(in srgb, var(--primary) 9%, #fff);
   margin-right: 8px;
   position: relative;
   left: 320px;
@@ -432,10 +448,10 @@ dialog p {
   align-items: flex-start;
   gap: 9px;
   padding: 14px;
-  background: color-mix(in srgb, var(--green) 9%, #fff);
-  border: 1px solid color-mix(in srgb, var(--green) 9%, #fff);
+  background: color-mix(in srgb, var(--primary) 9%, #fff);
+  border: 1px solid color-mix(in srgb, var(--primary) 9%, #fff);
   border-radius: 8px;
-  color: #66745f;
+  color: var(--muted);
   font-size: 13px;
   line-height: 1.5;
   margin-top: 26px;
@@ -445,8 +461,21 @@ dialog p {
   font-weight: 600;
   width: 100%;
   background: none;
-  color: var(--green);
+  color: var(--primary);
   margin-top: 12px;
+  text-align: left;
+}
+.demo-entry-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.demo-entry-detail {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--muted);
+  margin-top: 3px;
 }
 .auth-form-wrap > .install-button {
   display: flex;
@@ -461,8 +490,8 @@ dialog p {
 }
 .demo-banner {
   min-height: 37px;
-  background: color-mix(in srgb, var(--green) 9%, #fff);
-  color: var(--green);
+  background: color-mix(in srgb, var(--primary) 9%, #fff);
+  color: var(--primary);
   padding: 6px 28px;
   display: flex;
   justify-content: space-between;
@@ -481,7 +510,7 @@ dialog p {
   min-height: 26px;
   font-size: 12px;
   background: transparent;
-  color: var(--green);
+  color: var(--primary);
   font-weight: 650;
   padding: 0;
 }
@@ -489,7 +518,7 @@ dialog p {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: color-mix(in srgb, var(--green) 75%, #fff);
+  background: color-mix(in srgb, var(--primary) 75%, #fff);
   margin-right: 5px;
 }
 .sidebar {
@@ -508,13 +537,13 @@ dialog p {
   top: 38px;
 }
 /* Dentro da sidebar a marca acompanha a escala do destaque, não a cor principal:
-   com destaque escuro o --green afundaria no fundo. */
+   com destaque escuro o --primary afundaria no fundo. */
 .sidebar > .brand {
   margin-bottom: 60px;
   color: var(--side-text, inherit);
 }
 .sidebar > .brand .brand-mark {
-  color: var(--side-text, var(--green));
+  color: var(--side-text, var(--primary));
 }
 .sidebar > .brand .brand-dot {
   color: var(--side-text, var(--accent));
@@ -522,7 +551,7 @@ dialog p {
 .sidebar-label {
   font-size: 10px;
   letter-spacing: 0.16em;
-  color: var(--side-weak, #565f57);
+  color: var(--side-weak, var(--muted));
   font-weight: 700;
   margin: 0 14px 17px;
 }
@@ -536,17 +565,17 @@ dialog p {
   justify-content: flex-start;
   background: transparent;
   border-radius: 8px;
-  color: var(--side-text, #4a544c);
+  color: var(--side-text, #3d4650);
   font-size: 14px;
   gap: 13px;
 }
 .sidebar nav button.active {
-  background: var(--side-active-bg, color-mix(in srgb, var(--green) 9%, #fff));
-  color: var(--side-active-text, #345332);
+  background: var(--side-active-bg, color-mix(in srgb, var(--primary) 9%, #fff));
+  color: var(--side-active-text, var(--primary));
   font-weight: 650;
 }
 .sidebar nav button:hover {
-  background: var(--side-hover-bg, color-mix(in srgb, var(--green) 9%, #fff));
+  background: var(--side-hover-bg, color-mix(in srgb, var(--primary) 9%, #fff));
 }
 .sidebar-bottom {
   margin-top: auto;
@@ -582,13 +611,58 @@ dialog p {
   color: var(--side-weak, var(--muted));
 }
 .profile-mini .icon-button:hover {
-  background: var(--side-hover-bg, color-mix(in srgb, var(--green) 9%, #fff));
+  background: var(--side-hover-bg, color-mix(in srgb, var(--primary) 9%, #fff));
 }
 .sidebar .install-button {
   color: var(--side-weak, var(--muted));
 }
 .sidebar .install-button:hover {
   background: var(--side-hover-bg, transparent);
+}
+/* Recolher/expandir a sidebar (desktop): barra de ícones com rótulos clipados,
+   não removidos, para o nome acessível dos botões continuar existindo. */
+.sidebar {
+  transition: width 0.18s ease;
+  overflow: hidden;
+}
+.sidebar-toggle {
+  position: absolute;
+  top: 10px;
+  right: 8px;
+  width: 30px;
+  min-height: 30px;
+  color: var(--side-weak, var(--muted));
+}
+.sidebar-toggle:hover {
+  background: var(--side-hover-bg, transparent);
+}
+.sidebar.collapsed {
+  width: 68px;
+  padding-inline: 16px;
+}
+.sidebar.collapsed .sidebar-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.sidebar.collapsed .sidebar-label,
+.sidebar.collapsed .install-button,
+.sidebar.collapsed > .brand span {
+  display: none;
+}
+.sidebar.collapsed nav button {
+  justify-content: center;
+  padding-inline: 0;
+  gap: 0;
+}
+.sidebar.collapsed .profile-mini {
+  justify-content: center;
+}
+.app-shell:has(.sidebar.collapsed) .main-area {
+  margin-left: 68px;
 }
 .avatar {
   width: 36px;
@@ -597,8 +671,8 @@ dialog p {
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  background: color-mix(in srgb, var(--green) 9%, #fff);
-  color: var(--green);
+  background: color-mix(in srgb, var(--primary) 9%, #fff);
+  color: var(--primary);
   font-size: 12px;
   font-weight: 700;
   flex-shrink: 0;
@@ -613,7 +687,7 @@ dialog p {
   align-items: center;
   justify-content: space-between;
   padding: 0 42px;
-  background: color-mix(in srgb, var(--green) 9%, #fff);
+  background: color-mix(in srgb, var(--primary) 9%, #fff);
 }
 .desktop-breadcrumb {
   display: flex;
@@ -635,7 +709,7 @@ dialog p {
 .date-chip > span {
   width: 6px;
   height: 6px;
-  background: color-mix(in srgb, var(--green) 75%, #fff);
+  background: color-mix(in srgb, var(--primary) 75%, #fff);
   border-radius: 50%;
 }
 .workspace {
@@ -666,8 +740,8 @@ dialog p {
   max-width: 860px;
 }
 .rank-card {
-  background: color-mix(in srgb, var(--green) 9%, #fff);
-  border: 1px solid color-mix(in srgb, var(--green) 9%, #fff);
+  background: color-mix(in srgb, var(--primary) 9%, #fff);
+  border: 1px solid color-mix(in srgb, var(--primary) 9%, #fff);
   border-top: 4px solid var(--accent);
   border-radius: 13px;
   padding: 23px 28px 20px;
@@ -677,7 +751,7 @@ dialog p {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  color: color-mix(in srgb, var(--green) 75%, #fff);
+  color: color-mix(in srgb, var(--primary) 75%, #fff);
 }
 .rank-heading .eyebrow {
   color: var(--muted);
@@ -695,7 +769,7 @@ dialog p {
   color: var(--muted);
   font-size: 12px;
   padding: 3px 9px;
-  border: 1px solid color-mix(in srgb, var(--green) 30%, #fff);
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, #fff);
   border-radius: 5px;
 }
 .belt-visual {
@@ -800,15 +874,15 @@ dialog p {
   display: flex;
   align-items: center;
   gap: 15px;
-  border: 1px solid color-mix(in srgb, var(--green) 30%, #fff);
-  background: color-mix(in srgb, var(--green) 9%, #fff);
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, #fff);
+  background: color-mix(in srgb, var(--primary) 9%, #fff);
   border-radius: 12px;
   padding: 22px 23px;
   margin-top: 18px;
 }
 .checkin-icon {
-  color: color-mix(in srgb, var(--green) 75%, #fff);
-  background: color-mix(in srgb, var(--green) 9%, #fff);
+  color: color-mix(in srgb, var(--primary) 75%, #fff);
+  background: color-mix(in srgb, var(--primary) 9%, #fff);
   padding: 12px;
   border-radius: 50%;
 }
@@ -829,8 +903,8 @@ dialog p {
   white-space: nowrap;
 }
 .checkin-card button:disabled {
-  background: color-mix(in srgb, var(--green) 9%, #fff);
-  color: var(--green);
+  background: color-mix(in srgb, var(--primary) 9%, #fff);
+  color: var(--primary);
   opacity: 1;
 }
 .goal-card {
@@ -853,7 +927,7 @@ dialog p {
 .progress-track {
   height: 7px;
   border-radius: 10px;
-  background: color-mix(in srgb, var(--green) 9%, #fff);
+  background: color-mix(in srgb, var(--primary) 9%, #fff);
   overflow: hidden;
   margin-top: 17px;
 }
@@ -866,7 +940,7 @@ dialog p {
 .goal-card p {
   font-size: 12px;
   margin-top: 11px;
-  color: color-mix(in srgb, var(--green) 75%, #fff);
+  color: color-mix(in srgb, var(--primary) 75%, #fff);
 }
 .goal-card .muted {
   font-size: 12px;
@@ -965,8 +1039,8 @@ dialog p {
   padding: 0 1px 10px;
 }
 .tabs button.active {
-  color: var(--green);
-  border-bottom-color: color-mix(in srgb, var(--green) 75%, #fff);
+  color: var(--primary);
+  border-bottom-color: color-mix(in srgb, var(--primary) 75%, #fff);
   font-weight: 600;
 }
 .history-row {
@@ -974,7 +1048,7 @@ dialog p {
   align-items: center;
   gap: 13px;
   padding: 17px 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--green) 9%, #fff);
+  border-bottom: 1px solid color-mix(in srgb, var(--primary) 9%, #fff);
   min-width: 0;
 }
 .history-row:last-child {
@@ -986,10 +1060,10 @@ dialog p {
   justify-content: center;
   width: 32px;
   height: 32px;
-  border: 1px solid color-mix(in srgb, var(--green) 9%, #fff);
+  border: 1px solid color-mix(in srgb, var(--primary) 9%, #fff);
   border-radius: 50%;
-  background: color-mix(in srgb, var(--green) 9%, #fff);
-  color: color-mix(in srgb, var(--green) 75%, #fff);
+  background: color-mix(in srgb, var(--primary) 9%, #fff);
+  color: color-mix(in srgb, var(--primary) 75%, #fff);
   flex-shrink: 0;
 }
 .history-row > div:not(.action-wrap) {
@@ -1009,11 +1083,11 @@ dialog p {
 }
 .status-pill {
   font-size: 10px;
-  background: color-mix(in srgb, var(--green) 9%, #fff);
-  border: 1px solid color-mix(in srgb, var(--green) 9%, #fff);
+  background: color-mix(in srgb, var(--primary) 9%, #fff);
+  border: 1px solid color-mix(in srgb, var(--primary) 9%, #fff);
   padding: 3px 9px;
   border-radius: 5px;
-  color: color-mix(in srgb, var(--green) 75%, #fff);
+  color: color-mix(in srgb, var(--primary) 75%, #fff);
   letter-spacing: 0.02em;
 }
 .empty {
@@ -1049,22 +1123,22 @@ dialog p {
   min-height: 44px;
   padding: 8px 14px 8px 10px;
   border-radius: 9px;
-  background: color-mix(in srgb, var(--green) 9%, #fff);
+  background: color-mix(in srgb, var(--primary) 9%, #fff);
   font-size: 14px;
   transition: background 0.15s;
 }
 .back:hover {
-  background: color-mix(in srgb, var(--green) 16%, #fff);
+  background: color-mix(in srgb, var(--primary) 16%, #fff);
   text-decoration: none;
 }
 .back:active {
-  background: color-mix(in srgb, var(--green) 24%, #fff);
+  background: color-mix(in srgb, var(--primary) 24%, #fff);
 }
 .back:disabled {
   opacity: 0.55;
 }
 .back:focus-visible {
-  outline: 2px solid var(--green);
+  outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
 .back svg {
@@ -1093,11 +1167,11 @@ dialog p {
   background: transparent;
 }
 .password-toggle:hover {
-  color: var(--green);
-  background: color-mix(in srgb, var(--green) 9%, #fff);
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 9%, #fff);
 }
 .password-toggle:focus-visible {
-  outline: 2px solid var(--green);
+  outline: 2px solid var(--primary);
   outline-offset: 1px;
 }
 .teacher-overview {
@@ -1108,15 +1182,15 @@ dialog p {
 }
 .teacher-overview > div {
   padding: 25px;
-  background: color-mix(in srgb, var(--green) 9%, #fff);
-  border: 1px solid color-mix(in srgb, var(--green) 9%, #fff);
+  background: color-mix(in srgb, var(--primary) 9%, #fff);
+  border: 1px solid color-mix(in srgb, var(--primary) 9%, #fff);
   border-radius: 12px;
   display: flex;
   align-items: center;
   gap: 14px;
 }
 .teacher-overview svg {
-  color: color-mix(in srgb, var(--green) 75%, #fff);
+  color: color-mix(in srgb, var(--primary) 75%, #fff);
 }
 .teacher-overview strong {
   font-size: 32px;
@@ -1157,12 +1231,12 @@ dialog p {
   background: none;
   justify-content: flex-start;
   text-align: left;
-  border-bottom: 1px solid color-mix(in srgb, var(--green) 9%, #fff);
+  border-bottom: 1px solid color-mix(in srgb, var(--primary) 9%, #fff);
   padding: 21px 0;
   gap: 15px;
 }
 .student-row:hover {
-  background: color-mix(in srgb, var(--green) 9%, #fff);
+  background: color-mix(in srgb, var(--primary) 9%, #fff);
 }
 .student-row:last-child {
   border: 0;
@@ -1171,7 +1245,7 @@ dialog p {
   border: 2px solid var(--belt);
   width: 39px;
   height: 39px;
-  background: color-mix(in srgb, var(--green) 9%, #fff);
+  background: color-mix(in srgb, var(--primary) 9%, #fff);
   color: #58634e;
 }
 .student-name {
@@ -1215,11 +1289,11 @@ dialog p {
   align-self: start;
 }
 .teacher-actions > .section-heading {
-  color: color-mix(in srgb, var(--green) 75%, #fff);
+  color: color-mix(in srgb, var(--primary) 75%, #fff);
   margin-bottom: 20px;
 }
 .teacher-actions h3 {
-  color: #263b32;
+  color: #26323c;
 }
 .graduation-buttons {
   display: flex;
@@ -1276,7 +1350,7 @@ dialog p {
   margin-top: 24px;
 }
 .settings-card .section-heading > svg {
-  color: color-mix(in srgb, var(--green) 75%, #fff);
+  color: color-mix(in srgb, var(--primary) 75%, #fff);
 }
 .settings-card > .secondary {
   margin-top: 14px;
@@ -1324,7 +1398,7 @@ dialog p {
   margin-bottom: 45px;
 }
 .offline-screen > svg {
-  color: color-mix(in srgb, var(--green) 75%, #fff);
+  color: color-mix(in srgb, var(--primary) 75%, #fff);
 }
 .offline-screen p {
   max-width: 400px;
@@ -1788,21 +1862,21 @@ dialog p {
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--cream);
-  color: #263b32;
+  color: #26323c;
   font-size: 14px;
 }
 .chip.on {
-  background: color-mix(in srgb, var(--green) 12%, #fff);
-  border-color: var(--green);
-  color: var(--green);
+  background: color-mix(in srgb, var(--primary) 12%, #fff);
+  border-color: var(--primary);
+  color: var(--primary);
   font-weight: 650;
 }
 .history-row > div > span,
 .student-name > span {
-  color: color-mix(in srgb, var(--green) 75%, #fff);
+  color: color-mix(in srgb, var(--primary) 75%, #fff);
 }
 .status-pill {
-  color: var(--green);
+  color: var(--primary);
 }
 @media (max-width: 760px) {
   .stat-label {
@@ -1852,7 +1926,7 @@ dialog p {
   margin: 18px 0 4px;
 }
 .agenda-day.today {
-  color: var(--green);
+  color: var(--primary);
   font-weight: 700;
 }
 .student-row.cancelled {
@@ -1867,7 +1941,7 @@ dialog p {
   gap: 8px;
   font-size: 13px;
   margin: 22px 0 4px;
-  color: var(--green);
+  color: var(--primary);
 }
 .weekday-picker {
   border: 0;
@@ -1894,9 +1968,9 @@ dialog p {
   background: #fffefa;
 }
 .weekday-picker label.on {
-  background: var(--green);
+  background: var(--primary);
   color: #fff;
-  border-color: var(--green);
+  border-color: var(--primary);
 }
 .weekday-picker input {
   position: absolute;
@@ -1905,7 +1979,7 @@ dialog p {
   height: 1px;
 }
 .weekday-picker label:focus-within {
-  outline: 3px solid color-mix(in srgb, var(--green) 75%, #fff);
+  outline: 3px solid color-mix(in srgb, var(--primary) 75%, #fff);
   outline-offset: 2px;
 }
 .team-form {
@@ -1969,12 +2043,12 @@ dialog p {
   color: #5d695e;
 }
 .month-cell.today .month-day {
-  background: var(--green);
+  background: var(--primary);
   color: #fff;
 }
 .month-cell.selected {
-  border-color: var(--green);
-  box-shadow: inset 0 0 0 1px var(--green);
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
 }
 .month-day {
   font-size: 13px;
@@ -1997,15 +2071,15 @@ dialog p {
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: color-mix(in srgb, var(--green) 30%, #fff);
+  background: color-mix(in srgb, var(--primary) 30%, #fff);
   vertical-align: middle;
 }
 .dot.realizada {
-  background: var(--green);
+  background: var(--primary);
 }
 .dot.prevista {
   background: #fff;
-  border: 1.5px solid var(--green);
+  border: 1.5px solid var(--primary);
 }
 .dot.cancelada {
   background: #d9a3a0;
@@ -2062,7 +2136,7 @@ dialog p {
   width: 100%;
   border-radius: 8px;
   overflow: hidden;
-  background: color-mix(in srgb, var(--green) 9%, #fff);
+  background: color-mix(in srgb, var(--primary) 9%, #fff);
 }
 .photo-thumb img {
   width: 100%;
@@ -2135,7 +2209,7 @@ dialog p {
   align-items: center;
   gap: 10px;
   min-height: 44px;
-  border-bottom: 1px solid color-mix(in srgb, var(--green) 9%, #fff);
+  border-bottom: 1px solid color-mix(in srgb, var(--primary) 9%, #fff);
   font-size: 14px;
   cursor: pointer;
 }
@@ -2145,7 +2219,7 @@ dialog p {
 .roster input {
   width: 20px;
   height: 20px;
-  accent-color: var(--green);
+  accent-color: var(--primary);
 }
 .roster span {
   flex: 1;
@@ -2230,7 +2304,7 @@ nav button.active svg {
   border: 2px dashed var(--accent);
   border-radius: 12px;
   background: #fff;
-  color: var(--green);
+  color: var(--primary);
   word-break: break-all;
 }
 .join-code .graduation-buttons {
@@ -2275,7 +2349,7 @@ nav button.active svg {
   aspect-ratio: 4 / 3;
   border-radius: 12px;
   overflow: hidden;
-  background: color-mix(in srgb, var(--green) 9%, #fff);
+  background: color-mix(in srgb, var(--primary) 9%, #fff);
 }
 .photo-large img {
   width: 100%;
@@ -2427,7 +2501,7 @@ nav button.active svg {
   max-width: calc(100vw - 32px);
   padding: 8px 14px;
   border-radius: 12px;
-  background: var(--green);
+  background: var(--primary);
   color: #fffef9;
   font-size: 14px;
   box-shadow: 0 6px 18px #14251c33;
@@ -2467,7 +2541,7 @@ nav button.active svg {
   font-size: 16px;
   font-weight: 700;
   border-radius: 12px;
-  background: var(--green);
+  background: var(--primary);
   color: #fffef9;
 }
 .primary-dock:disabled {
@@ -2485,7 +2559,7 @@ nav button.active svg {
 .ghost {
   background: transparent;
   border: 0;
-  color: var(--green);
+  color: var(--primary);
   font-size: 14px;
   font-weight: 600;
   gap: 8px;
@@ -2624,7 +2698,7 @@ nav button.active svg {
   width: 22px;
   height: 22px;
   flex: none;
-  accent-color: var(--green);
+  accent-color: var(--primary);
 }
 .call-name {
   flex: 1 1 auto;
@@ -2638,7 +2712,7 @@ nav button.active svg {
   white-space: nowrap;
 }
 .st-confirmada {
-  color: var(--green);
+  color: var(--primary);
 }
 .st-pendente {
   color: #8e392d;
@@ -2745,9 +2819,9 @@ nav button.active svg {
   cursor: pointer;
 }
 .signup-choice .choice.active {
-  border-color: var(--green);
-  color: var(--green);
-  background: color-mix(in srgb, var(--green) 8%, #fff);
+  border-color: var(--primary);
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 8%, #fff);
 }
 .announcements {
   display: flex;
@@ -2767,7 +2841,7 @@ nav button.active svg {
   font-size: 14px;
   font-family: inherit;
   background: #fff;
-  color: var(--green);
+  color: var(--primary);
   resize: vertical;
 }
 .announcement-form .primary {

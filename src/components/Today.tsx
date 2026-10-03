@@ -35,6 +35,7 @@ export function Today({
   onChanged,
   onOpenSession,
   onCounts,
+  staff,
   agora,
 }: {
   call: Call
@@ -45,6 +46,7 @@ export function Today({
   onChanged: () => Promise<void> | void
   onOpenSession: (id: string) => void
   onCounts?: (reviews: number) => void
+  staff?: boolean
   /** Relógio injetável para testes; em produção usa Date.now(). */
   agora?: number
 }) {
@@ -160,7 +162,14 @@ export function Today({
         </section>
       )}
       {data && sessoes.length === 0 && (
-        <EmptyState icon={<CalendarDays size={28} />} message="Nenhuma aula hoje." />
+        <EmptyState
+          icon={<CalendarDays size={28} />}
+          message={
+            staff
+              ? 'Nenhuma aula hoje. Crie uma na Agenda para o time treinar.'
+              : 'Nenhuma aula hoje. Confira a Agenda para os próximos treinos.'
+          }
+        />
       )}
       <ul className="today-list">
         {sessoes.map((s) => {

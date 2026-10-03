@@ -310,7 +310,7 @@ test('visual da equipe: tema segue as cores e contraste bloqueia salvamento', as
   await page.getByRole('button', { name: 'Gestão' }).first().click()
   // Título da aba e barra do navegador acompanham a equipe.
   await expect(page).toHaveTitle('Equipe Demonstração · Tatame')
-  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#234c3a')
+  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#1d3557')
   const principal = page.locator('.team-form input[type="color"]').first()
   const destaque = page.locator('.team-form input[type="color"]').nth(1)
   // Cor principal clara demais: mensagem aparece e o salvamento trava.
@@ -328,7 +328,7 @@ test('visual da equipe: tema segue as cores e contraste bloqueia salvamento', as
   await page.getByRole('button', { name: 'Salvar visual' }).click()
   await expect(page.getByText('Visual atualizado.').first()).toBeVisible()
   await expect(page).toHaveTitle('Equipe Teste · Tatame')
-  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#234c3a')
+  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#1d3557')
 })
 
 test('aluno: edita nome, e-mail e senha no perfil', async ({ page }) => {
