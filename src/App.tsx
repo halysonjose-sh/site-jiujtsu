@@ -76,7 +76,7 @@ import { frequencyRate, streak } from './domain/frequency'
 
 /** Aplica o visual da equipe no :root: cores principais e escala legível da sidebar. */
 function aplicarVisual(root: CSSStyleDeclaration, primary: string, accent: string) {
-  root.setProperty('--primary', primary)
+  root.setProperty('--green', primary)
   root.setProperty('--accent', accent)
   const esc = escalaSidebar(accent)
   if (esc) {
@@ -92,7 +92,7 @@ function aplicarVisual(root: CSSStyleDeclaration, primary: string, accent: strin
 /** Volta ao visual padrão do Tatame (sem equipe carregada ou cor inválida). */
 function limparVisual(root: CSSStyleDeclaration) {
   for (const t of [
-    '--primary',
+    '--green',
     '--accent',
     '--side-text',
     '--side-weak',
@@ -2054,8 +2054,8 @@ function Settings({
 }) {
   const [value, setValue] = useState(goal?.toString() ?? ''),
     [name, setName] = useState(team?.name ?? ''),
-    [primary, setPrimary] = useState(team?.primaryColor ?? '#1d3557'),
-    [accent, setAccent] = useState(team?.accentColor ?? '#e9c46a'),
+    [primary, setPrimary] = useState(team?.primaryColor ?? '#234c3a'),
+    [accent, setAccent] = useState(team?.accentColor ?? '#cee68b'),
     [logoError, setLogoError] = useState('')
   // Pré-visualização ao vivo: o App aplica as cores escolhidas; ao desmontar
   // (salvar ou sair da página) o preview é limpo e o visual salvo volta a valer.
@@ -2342,7 +2342,7 @@ export default function App() {
       document.querySelector('meta[name="theme-color"]')?.setAttribute('content', cores?.p ?? team.primaryColor)
       document.title = `${team.name} · Tatame`
     } else {
-      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#1d3557')
+      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#234c3a')
       document.title = 'Tatame · Minha equipe'
     }
   }, [team, preview])

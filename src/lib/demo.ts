@@ -78,8 +78,8 @@ export function createDemo() {
     id: TEAM,
     name: 'Equipe Demonstração',
     slug: 'demo',
-    primaryColor: '#1d3557',
-    accentColor: '#e9c46a',
+    primaryColor: '#234c3a',
+    accentColor: '#cee68b',
     logoPath: null,
   }
   let goal: number | null = 30
