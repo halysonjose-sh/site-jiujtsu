@@ -877,7 +877,7 @@ function StudentSummary({
         <div className="rank-name">
           <h2>Faixa {s.belt}</h2>
           <span data-testid="current-degrees">
-            {s.degrees} {s.degrees === 1 ? 'grau' : 'graus'}
+            {s.degrees > 0 && `${s.degrees} ${s.degrees === 1 ? 'grau' : 'graus'}`}
           </span>
         </div>
         <BeltVisual belt={s.belt} degrees={s.degrees} />
@@ -2686,7 +2686,8 @@ export default function App() {
                       <span className="student-name">
                         <strong>{s.name}</strong>
                         <span>
-                          Faixa {s.belt} · {s.degrees} {s.degrees === 1 ? 'grau' : 'graus'}
+                          Faixa {s.belt}
+                          {s.degrees > 0 && ` · ${s.degrees} ${s.degrees === 1 ? 'grau' : 'graus'}`}
                         </span>
                       </span>
                       <span className="student-count">
