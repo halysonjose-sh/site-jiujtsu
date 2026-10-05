@@ -640,6 +640,15 @@ dialog p {
   width: 68px;
   padding-inline: 16px;
 }
+/* Recolhida: o toggle sai do canto absoluto (colidia com a marca) e vira o
+   primeiro item do fluxo, centralizado; a marca fica só com o símbolo. */
+.sidebar.collapsed .sidebar-toggle {
+  position: static;
+  margin: 0 auto 14px;
+}
+.sidebar.collapsed > .brand {
+  justify-content: center;
+}
 .sidebar.collapsed .sidebar-text {
   position: absolute;
   width: 1px;
@@ -655,11 +664,20 @@ dialog p {
 }
 .sidebar.collapsed nav button {
   justify-content: center;
+  align-self: center;
+  width: 36px;
   padding-inline: 0;
   gap: 0;
 }
 .sidebar.collapsed .profile-mini {
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+/* O bloco de nome tem flex:1 na base; clipado ele ainda ocuparia espaço e
+   desalinha avatar e Sair — recolhida, some do layout (Sair tem aria-label). */
+.sidebar.collapsed .profile-mini > div {
+  display: none;
 }
 .app-shell:has(.sidebar.collapsed) .main-area {
   margin-left: 68px;
