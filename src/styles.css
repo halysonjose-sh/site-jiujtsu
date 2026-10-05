@@ -19,6 +19,7 @@
   --line: #e2e5dc;
   --cream: #f6f5ef;
   --accent: #cee68b;
+  --surface: #fffefa;
   --touch: 44px;
   --fs-min: 13px;
 }
@@ -863,10 +864,21 @@ dialog p {
   gap: 16px;
   margin-top: 18px;
 }
-.stat-card {
-  background: #fffefa;
+/* Cartão único: receita base compartilhada por todos os cartões do app.
+   Cada regra abaixo adiciona só o que é específico (padding, margem, layout). */
+.stat-card,
+.goal-card,
+.history-card,
+.train-hero,
+.last-training,
+.student-list,
+.teacher-actions,
+.settings-card {
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 12px;
+}
+.stat-card {
   padding: 22px 24px;
   display: flex;
   flex-direction: column;
@@ -884,6 +896,7 @@ dialog p {
   line-height: 1.2;
   margin: 12px 0 8px;
   letter-spacing: -0.05em;
+  font-variant-numeric: tabular-nums;
 }
 .stat-card .muted {
   font-size: 12px;
@@ -927,9 +940,6 @@ dialog p {
 }
 .goal-card {
   padding: 23px 26px;
-  border: 1px solid var(--line);
-  background: #fffefa;
-  border-radius: 12px;
   margin-top: 18px;
 }
 .section-heading {
@@ -965,16 +975,10 @@ dialog p {
 }
 .history-card {
   margin-top: 30px;
-  background: #fffefa;
-  border: 1px solid var(--line);
-  border-radius: 12px;
   padding: 24px 26px;
 }
 /* Fase 4: cartÃ£o da prÃ³xima aula na aba Treinar â€” o check-in em 1 toque. */
 .train-hero {
-  background: #fffefa;
-  border: 1px solid var(--line);
-  border-radius: 12px;
   padding: 24px 26px;
   display: flex;
   flex-direction: column;
@@ -999,9 +1003,6 @@ dialog p {
 /* Fase 4: Ãºltimo treino com foto. */
 .last-training {
   margin-top: 30px;
-  background: #fffefa;
-  border: 1px solid var(--line);
-  border-radius: 12px;
   padding: 24px 26px;
 }
 .last-training img {
@@ -1092,6 +1093,7 @@ dialog p {
   font-size: 13px;
   font-weight: 550;
   display: block;
+  font-variant-numeric: tabular-nums;
 }
 .history-row > div > span {
   font-size: 11px;
@@ -1212,15 +1214,13 @@ dialog p {
 }
 .teacher-overview strong {
   font-size: 32px;
+  font-variant-numeric: tabular-nums;
 }
 .teacher-overview span {
   font-size: 13px;
   color: var(--muted);
 }
 .student-list {
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: #fffefa;
   padding: 24px;
 }
 .student-list h2 {
@@ -1289,6 +1289,7 @@ dialog p {
 .student-cycle strong {
   font-size: 20px;
   font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 .student-count > span,
 .student-cycle > span {
@@ -1301,9 +1302,6 @@ dialog p {
 }
 .teacher-actions {
   padding: 24px;
-  background: #fffefa;
-  border: 1px solid var(--line);
-  border-radius: 12px;
   align-self: start;
 }
 .teacher-actions > .section-heading {
@@ -1353,9 +1351,6 @@ dialog p {
 }
 .settings-card {
   max-width: 630px;
-  border: 1px solid var(--line);
-  background: #fffefa;
-  border-radius: 12px;
   padding: 28px;
 }
 .settings-card > p {
@@ -1390,7 +1385,7 @@ dialog p {
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: #fffefa;
+  background: var(--surface);
   font-size: 15px;
 }
 .profile-edit .sheet-section {
@@ -1983,7 +1978,7 @@ dialog p {
   border-radius: 8px;
   font-size: 13px;
   cursor: pointer;
-  background: #fffefa;
+  background: var(--surface);
 }
 .weekday-picker label.on {
   background: var(--green);
@@ -2046,7 +2041,7 @@ dialog p {
   min-height: 64px;
   padding: 6px 2px;
   border-radius: 8px;
-  background: #fffefa;
+  background: var(--surface);
   border: 1px solid var(--line);
   color: inherit;
 }
