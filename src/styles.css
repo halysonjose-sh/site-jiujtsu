@@ -1202,8 +1202,8 @@ dialog p {
 }
 .teacher-overview > div {
   padding: 25px;
-  background: color-mix(in srgb, var(--green) 9%, #fff);
-  border: 1px solid color-mix(in srgb, var(--green) 9%, #fff);
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: 12px;
   display: flex;
   align-items: center;

@@ -131,7 +131,7 @@ describe('Today', () => {
     await waitFor(() =>
       expect(mutate).toHaveBeenCalledWith('approve_member', { p_user: 'ana', p_approve: true }),
     )
-    fireEvent.click(screen.getByText('2 presenças a revisar'))
+    fireEvent.click(screen.getByText(/2 presenças a revisar/))
     await screen.findByRole('dialog')
   })
 

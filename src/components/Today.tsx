@@ -131,6 +131,7 @@ export function Today({
                 <div key={p.id} className="pendencia-row">
                   <span>{p.name}</span>
                   <ActionButton
+                    className="secondary"
                     label={`Aprovar ${p.name}`}
                     action={async () => {
                       await mutate('approve_member', { p_user: p.id, p_approve: true })
@@ -156,7 +157,7 @@ export function Today({
               className="pendencia-review"
               onClick={() => setChamada(s.id)}
             >
-              {s.pending} {s.pending === 1 ? 'presença' : 'presenças'} a revisar
+              {s.title} · {s.pending} {s.pending === 1 ? 'presença' : 'presenças'} a revisar
             </button>
           ))}
         </section>
