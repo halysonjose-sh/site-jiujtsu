@@ -155,7 +155,7 @@ export function UpcomingClasses({
           </div>
           {s.status !== 'cancelada' && checkinOpen(s) && (
             <ActionButton
-              className={s.mine ? 'secondary' : 'primary'}
+              className="secondary"
               action={() => act(s.mine ? 'cancel_checkin' : 'checkin', s.id)}
             >
               {s.mine ? (

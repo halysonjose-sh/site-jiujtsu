@@ -403,10 +403,22 @@ export function createDemo() {
   const diaFoto = [...past].reverse().find((s) => localDate(s.startsAt) <= addDays(today, -8))
   if (diaFoto) {
     const path = `teams/${TEAM}/sessions/${diaFoto.id}/fotos/demo.png`
-    files.set(
-      path,
-      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
-    )
+    // SVG 16:9 no lugar de um PNG 1x1: imagem de 1 pixel escalada a width:100%
+    // virava um bloco de ~800px de altura.
+    const svg =
+      "<svg xmlns='http://www.w3.org/2000/svg' width='960' height='540'>" +
+      "<rect width='960' height='540' fill='#234c3a'/>" +
+      "<g stroke='#3a6b52' stroke-width='2'>" +
+      "<line x1='0' y1='135' x2='960' y2='135'/>" +
+      "<line x1='0' y1='270' x2='960' y2='270'/>" +
+      "<line x1='0' y1='405' x2='960' y2='405'/>" +
+      "<line x1='240' y1='0' x2='240' y2='540'/>" +
+      "<line x1='480' y1='0' x2='480' y2='540'/>" +
+      "<line x1='720' y1='0' x2='720' y2='540'/>" +
+      '</g>' +
+      "<text x='480' y='278' text-anchor='middle' font-family='sans-serif' font-size='26' fill='#cee68b'>" +
+      'Foto do treino (exemplo)</text></svg>'
+    files.set(path, 'data:image/svg+xml;utf8,' + encodeURIComponent(svg))
     photos.push({ id: 'demo-foto-ultimo', sessionId: diaFoto.id!, path, caption: null })
   }
   const handlers: Record<string, (a: Record<string, any>) => unknown> = {
