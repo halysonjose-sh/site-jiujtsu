@@ -305,7 +305,9 @@ export function Agenda({
       title={staff ? 'Calendário de aulas' : 'Calendário de treinos'}
       aside={
         staff && pendingTotal > 0 ? (
-          <span className="muted">{pendingTotal} presença(s) para revisar</span>
+          <span className="muted">
+            {pendingTotal} {pendingTotal === 1 ? 'presença' : 'presenças'} para revisar
+          </span>
         ) : undefined
       }
     >
@@ -356,7 +358,9 @@ export function Agenda({
             {grid.slice(w * 7, w * 7 + 7).map((d) => {
               const list = byDay.get(d.date) ?? []
               const label = `${d.date.split('-').reverse().join('/')}: ${
-                list.length ? list.length + ' aula(s)' : 'sem aulas'
+                list.length
+                  ? list.length + (list.length === 1 ? ' aula' : ' aulas')
+                  : 'sem aulas'
               }`
               return (
                 <button
@@ -397,18 +401,23 @@ export function Agenda({
         ))}
       </div>
       <p className="calendar-legend">
-        <i className="dot realizada" /> realizada <i className="dot prevista" /> prevista{' '}
-        <i className="dot cancelada" /> cancelada
+        <span className="legend-item">
+          <i className="dot realizada" /> realizada
+        </span>
+        <span className="legend-item">
+          <i className="dot prevista" /> prevista
+        </span>
+        <span className="legend-item">
+          <i className="dot cancelada" /> cancelada
+        </span>
         {staff ? (
-          <>
-            {' '}
+          <span className="legend-item">
             <i className="dot pending" /> a revisar
-          </>
+          </span>
         ) : (
-          <>
-            {' '}
+          <span className="legend-item">
             <i className="dot mine" /> você treinou
-          </>
+          </span>
         )}
       </p>
       <h4 className="panel-subtitle">

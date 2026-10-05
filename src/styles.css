@@ -2111,8 +2111,8 @@ dialog p {
 }
 .dot {
   display: inline-block;
-  width: 9px;
-  height: 9px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: color-mix(in srgb, var(--green) 30%, #fff);
   vertical-align: middle;
@@ -2141,7 +2141,12 @@ dialog p {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 4px 14px;
+}
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 .journal textarea {
   width: 100%;
@@ -2300,7 +2305,7 @@ dialog p {
 
 /* v2.3: cadastro de aula */
 .new-session {
-  width: 100%;
+  width: auto;
   margin-bottom: 14px;
 }
 .add-day {
