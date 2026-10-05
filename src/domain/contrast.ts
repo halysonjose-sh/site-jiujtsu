@@ -3,7 +3,7 @@
  * Pares validados (superfícies onde a cor escolhida encontra texto fixo):
  * - cor principal como fundo de botões/dock/toast com texto claro (#fffef9);
  * - cor de destaque como texto sobre a cor principal (link Desfazer do toast);
- * - cor de destaque como fundo da sidebar com textos fixos de navegação.
+ * - cor principal como fundo da sidebar, com textos derivados por escalaSidebar.
  */
 
 /** Luminância relativa WCAG (hex #rgb ou #rrggbb). */
@@ -39,7 +39,7 @@ export type FalhaContraste = { par: string; ratio: number }
  * Pares que ficam ilegíveis com as cores escolhidas.
  * - cor principal vs texto claro (botões, dock, toast)
  * - cor de destaque vs cor principal (link Desfazer do toast, marcadores)
- * O texto da navegação não entra mais: ele é derivado do destaque por
+ * O texto da navegação não entra mais: ele é derivado da cor principal por
  * escalaSidebar, então se adapta a qualquer cor escolhida.
  */
 export function falhasDeContraste(primary: string, accent: string): FalhaContraste[] {
@@ -87,34 +87,34 @@ function primeiraLegivel(fundo: string, candidatos: string[]): string | null {
 }
 
 /**
- * Escala de cores da sidebar a partir da cor de destaque escolhida pelo dono.
- * A sidebar usa o destaque como fundo, então o texto precisa ser derivado dele:
- * destaque escuro pede texto claro, destaque claro pede texto escuro.
- * Devolve null se o destaque for inválido (o CSS cai nos valores padrão).
+ * Escala de cores da sidebar a partir da cor principal escolhida pelo dono.
+ * A sidebar usa a cor principal como fundo, então o texto precisa ser derivado
+ * dela: cor escura pede texto claro, cor clara pede texto escuro.
+ * Devolve null se a cor for inválida (o CSS cai nos valores padrão).
  */
-export function escalaSidebar(accent: string): EscalaSidebar | null {
-  if (luminance(accent) === null) return null
-  const escuro = mixHex(accent, '#000000', 0.85) ?? '#1c241e'
-  const claro = mixHex(accent, '#ffffff', 0.92) ?? TEXTO_CLARO
+export function escalaSidebar(primary: string): EscalaSidebar | null {
+  if (luminance(primary) === null) return null
+  const escuro = mixHex(primary, '#000000', 0.85) ?? '#1c241e'
+  const claro = mixHex(primary, '#ffffff', 0.92) ?? TEXTO_CLARO
   const texto =
-    primeiraLegivel(accent, [TEXTO_CLARO, claro, escuro, '#000000']) ?? '#1c241e'
+    primeiraLegivel(primary, [TEXTO_CLARO, claro, escuro, '#000000']) ?? '#1c241e'
   const fraco =
-    primeiraLegivel(accent, [mixHex(texto, accent, 0.35) ?? texto, texto]) ?? texto
+    primeiraLegivel(primary, [mixHex(texto, primary, 0.35) ?? texto, texto]) ?? texto
   // Realce do item ativo: o próprio texto misturado ao fundo mantém o matiz
   // da equipe. A mistura é reduzida até o texto continuar AA sobre o realce —
   // em destaque de tom médio, 14% derruba o par abaixo de 4.5:1.
-  let ativoBg = accent
+  let ativoBg = primary
   for (const peso of [0.14, 0.1, 0.06]) {
-    const candidato = mixHex(accent, texto, peso) ?? accent
+    const candidato = mixHex(primary, texto, peso) ?? primary
     if ((contrastRatio(candidato, texto) ?? 0) >= MINIMO) {
       ativoBg = candidato
       break
     }
   }
   const ativoTexto = texto
-  let hoverBg = accent
+  let hoverBg = primary
   for (const peso of [0.08, 0.05]) {
-    const candidato = mixHex(accent, texto, peso) ?? accent
+    const candidato = mixHex(primary, texto, peso) ?? primary
     if ((contrastRatio(candidato, texto) ?? 0) >= MINIMO) {
       hoverBg = candidato
       break

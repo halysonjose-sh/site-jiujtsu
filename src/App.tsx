@@ -78,7 +78,8 @@ import { frequencyRate, streak } from './domain/frequency'
 function aplicarVisual(root: CSSStyleDeclaration, primary: string, accent: string) {
   root.setProperty('--green', primary)
   root.setProperty('--accent', accent)
-  const esc = escalaSidebar(accent)
+  // A sidebar usa a cor principal como fundo, então o texto deriva dela.
+  const esc = escalaSidebar(primary)
   if (esc) {
     root.setProperty('--side-text', esc.texto)
     root.setProperty('--side-weak', esc.fraco)
