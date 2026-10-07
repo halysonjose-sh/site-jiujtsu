@@ -1001,3 +1001,82 @@ describe('eleger dono e excluir conta', () => {
     expect(await one(id(41), 'select public.list_students()')).toHaveLength(0)
   })
 })
+
+describe('aluno criado pelo professor (convite por e-mail)', () => {
+  const emailConvidado = 'convidado@test.local'
+  let convite: string
+  it('professor cria convite com nome e aulas anteriores', async () => {
+    const r = await one(teacher, 'select public.create_invited_student($1,$2)', [
+      'Carlos Lima',
+      12,
+    ])
+    convite = r.id
+    expect(r.name).toBe('Carlos Lima')
+    expect(r.initialTotal).toBe(12)
+    expect((await one(teacher, 'select public.list_invited_students()'))).toHaveLength(1)
+  })
+  it('aluno comum não cria convite', async () => {
+    await expect(
+      asUser(novo, 'select public.create_invited_student($1,$2)', ['Fulano', 0]),
+    ).rejects.toThrow()
+  })
+  it('nome curto e total negativo são recusados', async () => {
+    await expect(
+      asUser(teacher, 'select public.create_invited_student($1,$2)', ['C', 0]),
+    ).rejects.toThrow(/nome/)
+    await expect(
+      asUser(teacher, 'select public.create_invited_student($1,$2)', ['Carlos Dois', -1]),
+    ).rejects.toThrow(/aulas/)
+  })
+  it('professor informa o e-mail depois; e-mail é normalizado', async () => {
+    await asUser(teacher, 'select public.set_invited_email($1,$2)', [convite, '  Convidado@TEST.local '])
+    const lista = await one(teacher, 'select public.list_invited_students()')
+    expect(lista[0].claimEmail).toBe('convidado@test.local')
+  })
+  it('e-mail inválido é recusado', async () => {
+    await expect(
+      asUser(teacher, 'select public.set_invited_email($1,$2)', [convite, 'sem-arroba']),
+    ).rejects.toThrow(/E-mail/)
+  })
+  it('cadastro com o e-mail do convite entra ativo com as aulas anteriores', async () => {
+    await db.query(
+      'insert into auth.users(id,email,raw_user_meta_data) values ($1,$2,$3::jsonb)',
+      [id(50), emailConvidado, JSON.stringify({ name: 'Carlos Lima', class_code: 'OUTRO-CODIGO-99' })],
+    )
+    const membro = (
+      await db.query('select role,status,initial_total from public.team_members where user_id=$1', [id(50)])
+    ).rows[0]
+    expect(membro).toEqual({ role: 'aluno', status: 'ativo', initial_total: 12 })
+    // Convite sai da lista de aguardando acesso.
+    expect(await one(teacher, 'select public.list_invited_students()')).toHaveLength(0)
+    // Total e frequência: 12 aulas anteriores contam em total e held
+    // (held soma também as aulas já realizadas desde a entrada, criadas por
+    // testes anteriores — por isso o esperado é calculado, não fixo).
+    const realizadas = await n(
+      `select count(*) from public.class_sessions
+       where team_id = (select id from public.teams where slug='minha-turma')
+        and status <> 'cancelada' and starts_at <= now()
+        and (starts_at at time zone 'America/Sao_Paulo')::date >= (now() at time zone 'America/Sao_Paulo')::date`,
+    )
+    const d = await one(teacher, 'select public.student_detail($1)', [id(50)])
+    expect(d.total).toBe(12)
+    expect(d.held).toBe(12 + realizadas)
+  })
+  it('convite já usado não vincula de novo; novo cadastro segue pendente', async () => {
+    await db.query(
+      'insert into auth.users(id,email,raw_user_meta_data) values ($1,$2,$3::jsonb)',
+      [id(51), emailConvidado, JSON.stringify({ name: 'Outro Carlos', class_code: 'OUTRO-CODIGO-99' })],
+    )
+    expect(
+      (await db.query('select status from public.team_members where user_id=$1', [id(51)])).rows[0],
+    ).toEqual({ status: 'pendente' })
+  })
+  it('excluir convite reivindicado falha; convite aberto é excluído', async () => {
+    await expect(
+      asUser(teacher, 'select public.delete_invited_student($1)', [convite]),
+    ).rejects.toThrow(/já usado/)
+    const outro = await one(teacher, 'select public.create_invited_student($1,$2)', ['Duda Souza', 0])
+    await asUser(teacher, 'select public.delete_invited_student($1)', [outro.id])
+    expect(await one(teacher, 'select public.list_invited_students()')).toHaveLength(0)
+  })
+})

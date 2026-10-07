@@ -1,8 +1,8 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { Today } from './Today'
 import { ToastProvider } from './Toast'
-import type { Call, SessionView, StudentView } from '../lib/api'
+import type { Call, SessionDetail, SessionView, StudentView } from '../lib/api'
 
 const HOJE = '2026-09-25'
 // Relógio fixo (09:00 em SP) para o teste não depender da hora real.
@@ -52,208 +52,126 @@ const turma = (): StudentView[] => [
   aluno({ id: 'lucas', name: 'Lucas Almeida' }),
   aluno({ id: 'marina', name: 'Marina Santos' }),
   aluno({ id: 'pedro', name: 'Pedro Oliveira' }),
-  aluno({ id: 'duda', name: 'Duda Ferreira' }),
   aluno({ id: 'ana', name: 'Ana Costa', memberStatus: 'pendente' }),
 ]
 
-const detalhe = {
+const detalhe: SessionDetail = {
   id: 'aula1',
   title: 'Jiu-jítsu adulto',
   startsAt: INICIADA,
   durationMin: 90,
-  status: 'prevista' as const,
+  status: 'prevista',
   cancelReason: null,
   description: null,
   students: [
-    { id: 'lucas', name: 'Lucas Almeida', status: 'confirmada' as const, source: 'checkin' },
-    { id: 'marina', name: 'Marina Santos', status: 'pendente' as const, source: 'checkin' },
+    { id: 'lucas', name: 'Lucas Almeida', status: 'confirmada', source: 'checkin' },
+    { id: 'marina', name: 'Marina Santos', status: 'pendente', source: 'checkin' },
     { id: 'pedro', name: 'Pedro Oliveira', status: null, source: null },
-    { id: 'duda', name: 'Duda Ferreira', status: 'rejeitada' as const, source: null },
   ],
 }
 
 function setup(
   sessoes: SessionView[],
-  opts?: { detail?: unknown; alunos?: StudentView[]; mutate?: () => Promise<void> },
+  opts: { detail?: SessionDetail; students?: StudentView[] } = {},
 ) {
+  const onChanged = vi.fn(async () => {})
+  const onOpenSession = vi.fn()
+  const onCounts = vi.fn()
   const call = vi.fn(async (name: string, args?: Record<string, unknown>) => {
     if (name === 'list_sessions') return sessoes
-    if (name === 'session_detail') return opts?.detail ?? detalhe
-    return null
+    if (name === 'session_detail') return opts.detail ?? detalhe
+    if (name === 'teacher_remove_presence') return null
+    throw new Error(`rpc inesperado: ${name}`)
   })
-  const mutate = opts?.mutate ?? vi.fn(async () => undefined)
-  const onChanged = vi.fn(async () => undefined)
-  const onOpenSession = vi.fn()
   render(
     <ToastProvider>
       <Today
         call={call as unknown as Call}
-        mutate={mutate}
+        mutate={vi.fn(async () => {})}
         today={HOJE}
-        students={opts?.alunos ?? turma()}
-        roster={turma().map((s) => ({ id: s.id, name: s.name }))}
+        students={opts.students ?? turma()}
         onChanged={onChanged}
         onOpenSession={onOpenSession}
+        onCounts={onCounts}
+        staff
         agora={AGORA}
       />
     </ToastProvider>,
   )
-  return { call, mutate, onChanged, onOpenSession }
+  return { call, onChanged, onOpenSession, onCounts }
 }
 
 beforeEach(() => {
-  document.body.innerHTML = ''
+  vi.clearAllMocks()
 })
 
-describe('Today', () => {
-  it('mostra as aulas do dia em cartões com contagens e chamada', async () => {
-    setup([
-      sessao({ id: 'aula1', startsAt: INICIADA, confirmed: 3, pending: 2 }),
-      sessao({
-        id: 'aula2',
-        title: 'Treino de competição',
-        startsAt: FUTURA,
-        status: 'cancelada',
-        cancelReason: 'Chuva',
-      }),
-    ])
-    expect(await screen.findByText('Jiu-jítsu adulto')).toBeTruthy()
-    expect(screen.getByText('3 confirmados · 2 a revisar')).toBeTruthy()
-    // A aula cancelada não oferece chamada
-    expect(screen.getAllByRole('button', { name: 'Fazer chamada' })).toHaveLength(1)
-    expect(screen.getByText(/Cancelada/)).toBeTruthy()
+describe('Today (professor)', () => {
+  it('mostra o treino do dia com contagem de check-ins', async () => {
+    setup([sessao({ id: 'aula1', startsAt: INICIADA, checkins: 2 })])
+    expect(await screen.findByText('2 alunos fizeram check-in')).toBeTruthy()
   })
 
-  it('mostra aprovações pendentes e presenças a revisar', async () => {
-    const { mutate } = setup([sessao({ id: 'aula1', startsAt: INICIADA, pending: 2 })])
-    expect(await screen.findByText('Aguardando aprovação')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Aprovar Ana Costa' }))
-    await waitFor(() =>
-      expect(mutate).toHaveBeenCalledWith('approve_member', { p_user: 'ana', p_approve: true }),
-    )
-    fireEvent.click(screen.getByText(/2 presenças a revisar/))
-    await screen.findByRole('dialog')
+  it('mostra estado vazio de check-in quando ninguém fez', async () => {
+    setup([sessao({ id: 'aula1', startsAt: INICIADA, checkins: 0 })])
+    expect(await screen.findByText('Nenhum aluno fez check-in ainda')).toBeTruthy()
   })
 
-  it('recusar fica no menu de ações e pede confirmação', async () => {
-    const { mutate } = setup([sessao({ id: 'aula1', startsAt: INICIADA })])
-    await screen.findByText('Aguardando aprovação')
-    fireEvent.click(screen.getByRole('button', { name: 'Ações de Ana Costa' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Recusar' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar' }))
-    await waitFor(() =>
-      expect(mutate).toHaveBeenCalledWith('approve_member', { p_user: 'ana', p_approve: false }),
-    )
-  })
-
-  it('folha marca confirmada e pendente, deixa resto desmarcado', async () => {
-    setup([sessao({ id: 'aula1', startsAt: INICIADA, confirmed: 1, pending: 1 })])
-    fireEvent.click(await screen.findByRole('button', { name: 'Fazer chamada' }))
+  it('folha de check-ins lista quem fez e exclui o check-in', async () => {
+    const { call, onChanged } = setup([sessao({ id: 'aula1', startsAt: INICIADA, checkins: 2 })])
+    fireEvent.click(await screen.findByRole('button', { name: 'Ver check-ins' }))
     const folha = await screen.findByRole('dialog')
-    await screen.findByRole('checkbox', { name: 'Lucas Almeida' })
-    expect(screen.getByRole('checkbox', { name: 'Lucas Almeida' })).toBeChecked()
-    expect(screen.getByRole('checkbox', { name: 'Marina Santos' })).toBeChecked()
-    expect(screen.getByRole('checkbox', { name: 'Pedro Oliveira' })).not.toBeChecked()
-    expect(screen.getByRole('checkbox', { name: 'Duda Ferreira' })).not.toBeChecked()
-    // tocar a linha alterna
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Pedro Oliveira' }))
-    expect(screen.getByRole('checkbox', { name: 'Pedro Oliveira' })).toBeChecked()
-    expect(folha.querySelector('.primary-dock')).toBeTruthy()
-  })
-
-  it('desmarcar pendente salva review_presence rejeitada sem confirm_presences', async () => {
-    const { call, onChanged } = setup([sessao({ id: 'aula1', startsAt: INICIADA, pending: 1 })])
-    fireEvent.click(await screen.findByRole('button', { name: 'Fazer chamada' }))
-    await screen.findByRole('dialog')
-    fireEvent.click(await screen.findByRole('checkbox', { name: 'Marina Santos' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Salvar presenças' }))
-    await waitFor(() =>
-      expect(call).toHaveBeenCalledWith('review_presence', {
-        p_session: 'aula1',
-        p_student: 'marina',
-        p_decision: 'rejeitada',
-      }),
-    )
-    expect(
-      call.mock.calls.some(([nome]) => nome === 'confirm_presences'),
-    ).toBe(false)
-    // Mensagem inline na folha; o toast só sai quando ela fecha.
-    expect(screen.getByText('Chamada salva')).toBeTruthy()
-    await waitFor(() => expect(onChanged).toHaveBeenCalled())
-    // Recusa envolve check-in pendente: produção não tem RPC que volte a
-    // 'pendente', então o toast pós-fechar não oferece Desfazer.
-    fireEvent.click(screen.getByRole('button', { name: 'Fechar' }))
-    await screen.findByText('Chamada salva')
-    expect(screen.queryByRole('button', { name: 'Desfazer' })).toBeNull()
-  })
-
-  it('Desfazer restaura o aluno que não tinha registro', async () => {
-    // Sem check-in pendente no detalhe: só esse estado é restaurável.
-    const { call } = setup([sessao({ id: 'aula1', startsAt: INICIADA })], {
-      detail: {
-        ...detalhe,
-        students: [
-          { id: 'lucas', name: 'Lucas Almeida', status: 'confirmada' as const, source: 'checkin' },
-          { id: 'pedro', name: 'Pedro Oliveira', status: null, source: null },
-        ],
-      },
-    })
-    fireEvent.click(await screen.findByRole('button', { name: 'Fazer chamada' }))
-    await screen.findByRole('dialog')
-    fireEvent.click(await screen.findByRole('checkbox', { name: 'Pedro Oliveira' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Salvar presenças' }))
-    await screen.findByText('Chamada salva')
-    expect(call).toHaveBeenCalledWith('confirm_presences', {
-      p_session: 'aula1',
-      p_students: ['pedro'],
-    })
-    // O toast com Desfazer só existe fora do top layer da folha: fecha primeiro.
-    fireEvent.click(screen.getByRole('button', { name: 'Fechar' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Desfazer' }))
+    await waitFor(() => expect(folha.textContent).toContain('Lucas Almeida'))
+    expect(folha.textContent).toContain('Marina Santos')
+    expect(folha.textContent).not.toContain('Pedro Oliveira')
+    fireEvent.click(within(folha).getByRole('button', { name: 'Excluir check-in de Marina Santos' }))
+    // ActionButton com confirm abre diálogo de confirmação antes de executar.
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar' }))
     await waitFor(() =>
       expect(call).toHaveBeenCalledWith('teacher_remove_presence', {
         p_session: 'aula1',
-        p_student: 'pedro',
+        p_student: 'marina',
       }),
     )
+    await waitFor(() => expect(onChanged).toHaveBeenCalled())
   })
 
-  it('recusar com falha mantém o diálogo aberto e mostra o erro', async () => {
-    const { mutate } = setup([sessao({ id: 'aula1', startsAt: INICIADA })], {
-      mutate: vi.fn(async () => {
-        throw new Error('Sem conexão.')
-      }),
-    })
-    await screen.findByText('Aguardando aprovação')
-    fireEvent.click(screen.getByRole('button', { name: 'Ações de Ana Costa' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Recusar' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar' }))
+  it('folha de check-ins vazia mostra a frase de estado vazio', async () => {
+    setup(
+      [sessao({ id: 'aula1', startsAt: INICIADA, checkins: 0 })],
+      { detail: { ...detalhe, students: [] } },
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'Ver check-ins' }))
+    const folha = await screen.findByRole('dialog')
     await waitFor(() =>
-      expect(mutate).toHaveBeenCalledWith('approve_member', { p_user: 'ana', p_approve: false }),
+      expect(folha.textContent).toContain('Nenhum aluno fez check-in nesta aula ainda.'),
     )
-    await screen.findByRole('alert')
-    expect(screen.getByRole('button', { name: 'Confirmar' })).toBeTruthy()
   })
 
-  it('desabilita salvar antes do início e mostra a dica', async () => {
+  it('sem aula hoje mostra a próxima aula da turma', async () => {
     setup([
-      sessao({ id: 'aula1', startsAt: FUTURA }),
-    ], { detail: { ...detalhe, startsAt: FUTURA } })
-    fireEvent.click(await screen.findByRole('button', { name: 'Fazer chamada' }))
-    await screen.findByRole('dialog')
-    expect(screen.getByRole('button', { name: 'Salvar presenças' })).toBeDisabled()
-    expect(screen.getByText('A chamada abre quando a aula começar.')).toBeTruthy()
+      sessao({ id: 'proxima', startsAt: '2026-09-28T22:00:00Z', title: 'Jiu-jítsu kids' }),
+    ])
+    expect(await screen.findByText('Nenhuma aula hoje')).toBeTruthy()
+    expect(await screen.findByText('Jiu-jítsu kids')).toBeTruthy()
+    expect(screen.getByText(/Próxima aula:/)).toBeTruthy()
   })
 
-  it('estado vazio quando não há aula hoje', async () => {
-    setup([])
-    expect(await screen.findByText(/Nenhuma aula hoje\./)).toBeTruthy()
+  it('aprovação de aluno pendente continua na tela', async () => {
+    setup([sessao({ id: 'aula1', startsAt: INICIADA })])
+    expect(await screen.findByText('Aguardando aprovação')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Aprovar Ana Costa' })).toBeTruthy()
   })
 
-  it('Fotos do treino navega para a tela da aula', async () => {
+  it('aula cancelada não oferece botões de ação', async () => {
+    setup([sessao({ id: 'aula1', startsAt: INICIADA, status: 'cancelada', cancelReason: 'chuva' })])
+    expect(await screen.findByText(/Cancelada · chuva/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Ver check-ins' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Editar treino e fotos/ })).toBeNull()
+  })
+
+  it('Editar treino e fotos navega para a tela da aula', async () => {
     const { onOpenSession } = setup([sessao({ id: 'aula1', startsAt: INICIADA })])
-    fireEvent.click(await screen.findByRole('button', { name: 'Fazer chamada' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Fotos do treino' }))
+    fireEvent.click(await screen.findByRole('button', { name: /Editar treino e fotos/ }))
     expect(onOpenSession).toHaveBeenCalledWith('aula1')
   })
 })

@@ -1,20 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { CalendarDays, Camera, Check, Users } from 'lucide-react'
+import { CalendarDays, Check, Pencil, Trash2, Users } from 'lucide-react'
 import { ActionButton } from './ActionButton'
 import { BottomSheet } from './BottomSheet'
 import { EmptyState } from './EmptyState'
 import { OverflowMenu } from './OverflowMenu'
-import { presenceLabel, timeLabel, useLoad } from './Classes'
+import { dayLabel, presenceLabel, timeLabel, useLoad } from './Classes'
 import { useToast } from './Toast'
-import {
-  callChanges,
-  callRows,
-  callUndo,
-  reviewCount,
-  sessionsOfToday,
-  type LinhaChamada,
-  type PassoChamada,
-} from '../domain/today'
+import { nextSession, reviewCount, sessionsOfToday, type StatusPresenca } from '../domain/today'
 import {
   friendlyError,
   type Call,
@@ -25,13 +17,12 @@ import {
 
 type Mutate = (name: string, args?: Record<string, unknown>) => Promise<void>
 
-/** Professor: aulas de hoje, aprovações pendentes e folha de chamada. */
+/** Professor: treino do dia, check-ins (ver e excluir) e aprovações de alunos. */
 export function Today({
   call,
   mutate,
   today,
   students,
-  roster,
   onChanged,
   onOpenSession,
   onCounts,
@@ -42,7 +33,6 @@ export function Today({
   mutate: Mutate
   today: string
   students: StudentView[]
-  roster: { id: string; name: string }[]
   onChanged: () => Promise<void> | void
   onOpenSession: (id: string) => void
   onCounts?: (reviews: number) => void
@@ -51,18 +41,20 @@ export function Today({
   agora?: number
 }) {
   const pendencias = students.filter((s) => s.memberStatus === 'pendente')
+  // Uma busca só: hoje + 62 dias. A próxima aula só aparece quando hoje está vazio.
   const { data, error, reload } = useLoad(
-    () => call<SessionView[]>('list_sessions', { p_from: today, p_to: today }),
+    () => call<SessionView[]>('list_sessions', { p_from: today, p_to: addDays(today, 56) }),
+    // 56 dias: é o limite em que o backend gera sessões recorrentes.
     [call, today],
   )
   const sessoes = sessionsOfToday(data ?? [], today)
-  const [chamada, setChamada] = useState<string | null>(null)
+  const [checkins, setCheckins] = useState<string | null>(null)
   const [recusando, setRecusando] = useState<StudentView | null>(null)
   const [erroRecusa, setErroRecusa] = useState<string | null>(null)
   const dialogRecusa = useRef<HTMLDialogElement>(null)
   const toast = useToast()
-  const aula = sessoes.find((s) => s.id === chamada) ?? null
-  const revisar = sessoes.filter((s) => (s.pending ?? 0) > 0 && s.status !== 'cancelada')
+  const aula = sessoes.find((s) => s.id === checkins) ?? null
+  const proxima = data && sessoes.length === 0 ? nextSession(data, agora ?? Date.now()) : null
 
   useEffect(() => {
     if (data) onCounts?.(reviewCount(sessoes))
@@ -121,48 +113,34 @@ export function Today({
           </button>
         </p>
       )}
-      {(pendencias.length > 0 || revisar.length > 0) && (
+      {pendencias.length > 0 && (
         <section className="pendencias" aria-label="Pendências">
-          <h2>Pendências</h2>
-          {pendencias.length > 0 && (
-            <div className="pendencia-aprovacoes">
-              <h3>Aguardando aprovação</h3>
-              {pendencias.map((p) => (
-                <div key={p.id} className="pendencia-row">
-                  <span>{p.name}</span>
-                  <ActionButton
-                    className="secondary"
-                    label={`Aprovar ${p.name}`}
-                    action={async () => {
-                      await mutate('approve_member', { p_user: p.id, p_approve: true })
-                      await onChanged()
-                    }}
-                    success="Aprovado"
-                  >
-                    Aprovar
-                  </ActionButton>
-                  <OverflowMenu label={`Ações de ${p.name}`}>
-                    <button type="button" onClick={() => abrirRecusa(p)}>
-                      Recusar
-                    </button>
-                  </OverflowMenu>
-                </div>
-              ))}
+          <h2>Aguardando aprovação</h2>
+          {pendencias.map((p) => (
+            <div key={p.id} className="pendencia-row">
+              <span>{p.name}</span>
+              <ActionButton
+                className="secondary"
+                label={`Aprovar ${p.name}`}
+                action={async () => {
+                  await mutate('approve_member', { p_user: p.id, p_approve: true })
+                  await onChanged()
+                }}
+                success="Aprovado"
+              >
+                Aprovar
+              </ActionButton>
+              <OverflowMenu label={`Ações de ${p.name}`}>
+                <button type="button" onClick={() => abrirRecusa(p)}>
+                  Recusar
+                </button>
+              </OverflowMenu>
             </div>
-          )}
-          {revisar.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              className="pendencia-review"
-              onClick={() => setChamada(s.id)}
-            >
-              {s.title} · {s.pending} {s.pending === 1 ? 'presença' : 'presenças'} a revisar
-            </button>
           ))}
         </section>
       )}
-      {data && sessoes.length === 0 && (
+      {!data && !error && <p className="muted">Carregando…</p>}
+      {data && sessoes.length === 0 && !proxima && (
         <EmptyState
           icon={<CalendarDays size={28} />}
           message={
@@ -172,45 +150,63 @@ export function Today({
           }
         />
       )}
+      {proxima && (
+        <section className="next-class" aria-label="Próxima aula">
+          <h2>Nenhuma aula hoje</h2>
+          <div className="today-card">
+            <div className="today-card-head">
+              <span className="today-time">{timeLabel(proxima.startsAt)}</span>
+              <h3>{proxima.title}</h3>
+            </div>
+            <p className="today-counts">Próxima aula: {dayLabel(proxima.startsAt)}</p>
+          </div>
+        </section>
+      )}
       <ul className="today-list">
         {sessoes.map((s) => {
-          const c = s.confirmed ?? 0
-          const p = s.pending ?? 0
+          const checkinsCount = staff ? (s.checkins ?? 0) : null
           return (
             <li key={s.id} className="today-card">
               <div className="today-card-head">
                 <span className="today-time">{timeLabel(s.startsAt)}</span>
                 <h3>{s.title}</h3>
               </div>
-              {(s.confirmed !== null || s.pending !== null) && (
-                <p className="today-counts">
-                  {c} {c === 1 ? 'confirmado' : 'confirmados'} · {p} a revisar
-                </p>
-              )}
-              {s.status === 'cancelada' && (
+              {s.status === 'cancelada' ? (
                 <p className="today-cancelled">
                   Cancelada{s.cancelReason ? ` · ${s.cancelReason}` : ''}
                 </p>
-              )}
-              {s.status !== 'cancelada' && (
-                <button type="button" className="secondary" onClick={() => setChamada(s.id)}>
-                  Fazer chamada
-                </button>
+              ) : (
+                <>
+                  {checkinsCount !== null && (
+                    <p className="today-counts">
+                      {checkinsCount === 0
+                        ? 'Nenhum aluno fez check-in ainda'
+                        : `${checkinsCount} ${checkinsCount === 1 ? 'aluno fez' : 'alunos fizeram'} check-in`}
+                    </p>
+                  )}
+                  <div className="today-actions">
+                    <button type="button" className="secondary" onClick={() => setCheckins(s.id)}>
+                      Ver check-ins
+                    </button>
+                    <button type="button" className="secondary" onClick={() => onOpenSession(s.id)}>
+                      <Pencil size={16} /> Editar treino e fotos
+                    </button>
+                  </div>
+                </>
               )}
             </li>
           )
         })}
       </ul>
       {aula && (
-        <CallSheet
+        <CheckinSheet
           aula={aula}
           call={call}
-          roster={roster}
-          agora={agora}
-          onChanged={onChanged}
-          onOpenSession={onOpenSession}
-          reloadToday={() => reload()}
-          onClose={() => setChamada(null)}
+          onChanged={async () => {
+            await reload()
+            await onChanged()
+          }}
+          onClose={() => setCheckins(null)}
         />
       )}
       {recusando && (
@@ -241,92 +237,36 @@ export function Today({
   )
 }
 
-/** Folha de chamada: marca presenças da aula e salva em lote. */
-function CallSheet({
+/** Folha de check-ins: quem fez check-in na aula, com opção de excluir. */
+function CheckinSheet({
   aula,
   call,
-  roster,
-  agora,
   onChanged,
-  onOpenSession,
-  reloadToday,
   onClose,
 }: {
   aula: SessionView
   call: Call
-  roster: { id: string; name: string }[]
-  agora?: number
   onChanged: () => Promise<void> | void
-  onOpenSession: (id: string) => void
-  reloadToday: () => Promise<void>
   onClose: () => void
 }) {
   const { data, error, reload } = useLoad(
     () => call<SessionDetail>('session_detail', { p_session: aula.id }),
     [call, aula.id],
   )
-  const inicial: LinhaChamada[] = callRows(data?.students ?? [], roster)
-  const iniciais = new Set(
-    inicial.filter((l) => l.status === 'confirmada' || l.status === 'pendente').map((l) => l.id),
-  )
-  const [marcados, setMarcados] = useState<Set<string> | null>(null)
-  const [salvo, setSalvo] = useState(false)
-  const t = agora ?? Date.now()
-  const iniciada = new Date(aula.startsAt).getTime() <= t
-  const mudancas = callChanges(inicial, marcados ?? iniciais)
-  const semMudanca =
-    mudancas.confirm.length + mudancas.remove.length + mudancas.reject.length === 0
-  const ultimo = useRef<{ passos: PassoChamada[] | null } | null>(null)
   const toast = useToast()
-
-  function alternar(id: string) {
-    setSalvo(false)
-    setMarcados((prev) => {
-      const base = prev ?? iniciais
-      const prox = new Set(base)
-      if (prox.has(id)) prox.delete(id)
-      else prox.add(id)
-      return prox
-    })
+  // Só o que veio de check-in do aluno; presença lançada pelo professor
+  // (source 'professor') aparece na tela da aula, não aqui.
+  const checkins = (data?.students ?? []).filter(
+    (x) => x.source === 'checkin' && (x.status === 'pendente' || x.status === 'confirmada'),
+  )
+  const rotulo: Record<StatusPresenca, string> = {
+    pendente: 'Fez check-in',
+    confirmada: 'Presença confirmada',
+    rejeitada: 'Presença recusada',
   }
-
-  async function salvar() {
-    if (semMudanca) return
-    if (mudancas.confirm.length)
-      await call('confirm_presences', { p_session: aula.id, p_students: mudancas.confirm })
-    for (const id of mudancas.remove)
-      await call('teacher_remove_presence', { p_session: aula.id, p_student: id })
-    for (const id of mudancas.reject)
-      await call('review_presence', { p_session: aula.id, p_student: id, p_decision: 'rejeitada' })
-    // Grava só depois de todas as RPCs terem sucesso: falha nunca oferece
-    // Desfazer. callUndo devolve null quando o estado inicial não é
-    // restaurável (check-in pendente não tem RPC que volte).
-    ultimo.current = { passos: callUndo(inicial, mudancas, aula.id) }
-    setSalvo(true)
-    await reload()
-    await reloadToday()
-    await onChanged()
-  }
-
-  async function desfazer() {
-    const u = ultimo.current
-    if (!u?.passos) return
-    for (const passo of u.passos) await call(passo.rpc, passo.args)
-    await reload()
-    await reloadToday()
-    await onChanged()
-  }
-
-  function fechar() {
-    // O toast só existe fora da folha (que fica no top layer), então sai no
-    // fechar: os 3 segundos do Desfazer contam a partir daí, não do Salvar.
-    if (salvo) toast.show('Chamada salva', ultimo.current?.passos ? desfazer : undefined)
-    onClose()
-  }
-
   return (
-    <BottomSheet open title="Fazer chamada" onClose={fechar}>
-      <div className="call-sheet">
+    <BottomSheet open title={`Check-ins · ${aula.title}`} onClose={onClose}>
+      <div className="checkin-sheet">
         {error && (
           <p className="error-message" role="alert">
             {error}{' '}
@@ -336,37 +276,42 @@ function CallSheet({
           </p>
         )}
         {!data && !error && <p className="muted">Carregando…</p>}
-        <ul className="call-list">
-          {inicial.map((l) => (
-            <li key={l.id}>
-              <label className="call-row">
-                <input
-                  type="checkbox"
-                  aria-label={l.name}
-                  checked={(marcados ?? iniciais).has(l.id)}
-                  onChange={() => alternar(l.id)}
-                />
-                <span className="call-name">{l.name}</span>
-                {l.status && (
-                  <span className={`call-status st-${l.status}`}>{presenceLabel[l.status]}</span>
-                )}
-              </label>
+        {data && checkins.length === 0 && (
+          <p className="empty">Nenhum aluno fez check-in nesta aula ainda.</p>
+        )}
+        <ul className="checkin-list">
+          {checkins.map((x) => (
+            <li key={x.id} className="checkin-row">
+              <div>
+                <strong>{x.name}</strong>
+                <span className={`call-status st-${x.status}`}>{rotulo[x.status!]}</span>
+              </div>
+              <ActionButton
+                className="secondary danger"
+                label={`Excluir check-in de ${x.name}`}
+                confirm={`Excluir o check-in de ${x.name}? Use se ele não apareceu no treino.`}
+                action={async () => {
+                  await call('teacher_remove_presence', { p_session: aula.id, p_student: x.id })
+                  toast.show('Check-in excluído')
+                  await reload()
+                  await onChanged()
+                }}
+              >
+                <Trash2 size={16} /> Excluir
+              </ActionButton>
             </li>
           ))}
         </ul>
-        {!iniciada && <p className="call-hint">A chamada abre quando a aula começar.</p>}
-        <button type="button" className="ghost" onClick={() => onOpenSession(aula.id)}>
-          <Camera size={18} /> Fotos do treino
-        </button>
-        {salvo && <p className="success-message">Chamada salva</p>}
-        <ActionButton
-          className="primary-dock"
-          action={salvar}
-          disabled={!iniciada || semMudanca}
-        >
-          Salvar presenças
-        </ActionButton>
+        <p className="field-help">
+          Para confirmar presenças e lançar quem chegou sem check-in, abra o treino.
+        </p>
       </div>
     </BottomSheet>
   )
+}
+
+function addDays(iso: string, days: number): string {
+  const d = new Date(`${iso}T12:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString().slice(0, 10)
 }

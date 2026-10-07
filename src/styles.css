@@ -1284,6 +1284,21 @@ dialog p {
 .student-row:hover {
   background: color-mix(in srgb, var(--green) 9%, #fff);
 }
+.add-student {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 10px;
+}
+.student-row.invited {
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 14px 0;
+}
+.student-row.invited .student-name {
+  flex: 1 1 180px;
+}
 .student-row:last-child {
   border: 0;
 }
@@ -2716,6 +2731,57 @@ nav button.active svg {
   color: #8e392d;
   font-size: 13px;
   font-weight: 600;
+}
+.today-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.today-actions button {
+  flex: 1 1 150px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* ===== Folha de check-ins ===== */
+.checkin-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.checkin-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.checkin-list li + li {
+  border-top: 1px solid var(--line);
+}
+.checkin-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-height: 56px;
+  padding: 8px 4px;
+}
+.checkin-row > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.checkin-row strong {
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+.next-class h2 {
+  margin: 0 0 8px;
+  font-size: 15px;
+  color: var(--muted);
 }
 
 /* ===== Folha de chamada ===== */

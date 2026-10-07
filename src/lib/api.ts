@@ -78,6 +78,14 @@ export type SessionDetail = {
   students?: { id: string; name: string; status: PresenceStatus | null; source: string | null }[]
 }
 export type SessionPhoto = { id: string; path: string; caption: string | null }
+/** Aluno criado pelo professor, aguardando o cadastro com o e-mail informado. */
+export type InvitedStudent = {
+  id: string
+  name: string
+  initialTotal: number
+  claimEmail: string | null
+  createdAt: string
+}
 export type SessionJournal = {
   id: string
   teamId: string

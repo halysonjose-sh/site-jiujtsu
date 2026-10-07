@@ -20,6 +20,7 @@ import {
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
+  Mail,
   Plus,
   Search,
   Settings2,
@@ -53,6 +54,7 @@ import {
   type StudentView,
   type Team,
   type Announcement,
+  type InvitedStudent,
 } from './lib/api'
 import { Agenda, dayLabel, presenceLabel, Schedules, timeLabel } from './components/Classes'
 import { TrainTab } from './components/StudentTrain'
@@ -510,7 +512,7 @@ function Auth({
                 : mode === 'signup'
                   ? criandoTurma
                     ? 'Dê um nome à sua turma; você vira o responsável.'
-                    : 'Alunos usam o código da equipe; professores usam o código de professor.'
+                    : 'Alunos usam o código da equipe; professores usam o código de professor. Se o professor já cadastrou você, use o e-mail que você informou a ele.'
                   : mode === 'forgot'
                   ? 'Enviaremos um link para o seu e-mail.'
                   : 'Entre para acompanhar seus treinos.'}
@@ -2028,6 +2030,140 @@ function DeleteAccount({
   )
 }
 
+/** Folha: professor cria aluno sem conta (nome + aulas anteriores). */
+function NovoAlunoSheet({
+  call,
+  onClose,
+  onCriado,
+}: {
+  call: Call
+  onClose: () => void
+  onCriado: () => Promise<void> | void
+}) {
+  const [nome, setNome] = useState('')
+  const [aulas, setAulas] = useState('0')
+  const [erro, setErro] = useState('')
+  const [pending, setPending] = useState(false)
+  const toast = useToast()
+  async function criar(e: FormEvent) {
+    e.preventDefault()
+    if (pending) return
+    setErro('')
+    setPending(true)
+    try {
+      await call('create_invited_student', {
+        p_name: nome.trim(),
+        p_initial_total: Math.max(0, Math.floor(Number(aulas) || 0)),
+      })
+      toast.show('Aluno criado. Peça o e-mail dele para liberar o acesso.')
+      await onCriado()
+      onClose()
+    } catch (err) {
+      setErro(friendlyError(err))
+    } finally {
+      setPending(false)
+    }
+  }
+  return (
+    <BottomSheet open title="Adicionar aluno" onClose={onClose}>
+      <form className="initial-form" onSubmit={criar}>
+        <label className="field">
+          <span>Nome completo</span>
+          <input
+            value={nome}
+            onChange={(e) => setNome(e.target.value)}
+            minLength={2}
+            maxLength={100}
+            required
+          />
+        </label>
+        <label className="field">
+          <span>Quantas aulas ele já fez</span>
+          <input
+            value={aulas}
+            onChange={(e) => setAulas(e.target.value.replace(/[^\d]/g, ''))}
+            inputMode="numeric"
+            maxLength={5}
+          />
+        </label>
+        {erro && (
+          <p className="error-message" role="alert">
+            {erro}
+          </p>
+        )}
+        <button className="primary" disabled={pending}>
+          Criar aluno
+        </button>
+        <p className="field-help">
+          Ele entra em "Aguardando acesso". Quando ele te passar o e-mail, informe na lista para
+          liberar o login dele.
+        </p>
+      </form>
+    </BottomSheet>
+  )
+}
+
+/** Folha: informa (ou troca) o e-mail que o aluno usará para se cadastrar. */
+function EmailAlunoSheet({
+  call,
+  invite,
+  onClose,
+  onSalvo,
+}: {
+  call: Call
+  invite: InvitedStudent
+  onClose: () => void
+  onSalvo: () => Promise<void> | void
+}) {
+  const [email, setEmail] = useState(invite.claimEmail ?? '')
+  const [erro, setErro] = useState('')
+  const [pending, setPending] = useState(false)
+  const toast = useToast()
+  async function salvar(e: FormEvent) {
+    e.preventDefault()
+    if (pending) return
+    setErro('')
+    setPending(true)
+    try {
+      await call('set_invited_email', { p_invite: invite.id, p_email: email.trim() })
+      toast.show('E-mail salvo. Quando ele se cadastrar com esse e-mail, o acesso abre.')
+      await onSalvo()
+      onClose()
+    } catch (err) {
+      setErro(friendlyError(err))
+    } finally {
+      setPending(false)
+    }
+  }
+  return (
+    <BottomSheet open title={`E-mail de ${invite.name}`} onClose={onClose}>
+      <form className="initial-form" onSubmit={salvar}>
+        <label className="field">
+          <span>E-mail do aluno</span>
+          <input
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            type="email"
+            autoComplete="email"
+            required
+          />
+        </label>
+        {erro && (
+          <p className="error-message" role="alert">
+            {erro}
+          </p>
+        )}
+        <button className="primary" disabled={pending}>
+          Salvar e-mail
+        </button>
+        <p className="field-help">
+          Ele se cadastra com esse e-mail + código da equipe e entra direto, sem aprovação.
+        </p>
+      </form>
+    </BottomSheet>
+  )
+}
+
 function Settings({
   goal,
   mutate,
@@ -2303,6 +2439,24 @@ export default function App() {
     },
     [demo],
   ) as Call
+  // Alunos criados pelo professor, aguardando o cadastro com o e-mail informado.
+  // Hooks antes dos primeiros returns (login/offline) para não violar a ordem.
+  const [convidados, setConvidados] = useState<InvitedStudent[]>([])
+  const [novoAluno, setNovoAluno] = useState(false)
+  const [emailAluno, setEmailAluno] = useState<InvitedStudent | null>(null)
+  const reloadConvidados = useCallback(async () => {
+    if (!data || !isStaff(data.profile.role)) return
+    try {
+      setConvidados(await call<InvitedStudent[]>('list_invited_students'))
+    } catch {
+      // Lista auxiliar: falha deixa a seção de fora sem derrubar a tela
+      // (o erro principal do painel já aparece no próprio carregamento).
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [call, data])
+  useEffect(() => {
+    void reloadConvidados()
+  }, [reloadConvidados])
   const mutate: Mutate = async (name, args) => {
     if (!online || !navigator.onLine) throw new Error('Você está sem conexão.')
     await call(name, args)
@@ -2652,7 +2806,6 @@ export default function App() {
                   mutate={mutate}
                   today={data.today}
                   students={data.students}
-                  roster={active.map((x) => ({ id: x.id, name: x.name }))}
                   onChanged={refresh}
                   onOpenSession={openSession}
                   onCounts={setReviewsToday}
@@ -2674,6 +2827,43 @@ export default function App() {
                     />
                   </label>
                 </div>
+                <button className="text-button add-student" onClick={() => setNovoAluno(true)}>
+                  <Plus size={16} /> Adicionar aluno
+                </button>
+                {convidados.length > 0 && (
+                  <>
+                    <div className="section-heading inactive-heading">
+                      <h3>Aguardando acesso</h3>
+                      <span className="muted">Sem conta ainda</span>
+                    </div>
+                    {convidados.map((c) => (
+                      <div className="student-row invited" key={c.id}>
+                        <span className="student-name">
+                          <strong>{c.name}</strong>
+                          <span>
+                            {c.initialTotal}{' '}
+                            {c.initialTotal === 1 ? 'aula anterior' : 'aulas anteriores'} ·{' '}
+                            {c.claimEmail ?? 'aguardando e-mail'}
+                          </span>
+                        </span>
+                        <button className="text-button" onClick={() => setEmailAluno(c)}>
+                          <Mail size={16} /> {c.claimEmail ? 'Trocar e-mail' : 'Informar e-mail'}
+                        </button>
+                        <ActionButton
+                          className="text-button danger"
+                          label={`Excluir convite de ${c.name}`}
+                          confirm={`Excluir o convite de ${c.name}? Ele deixará de aparecer na lista.`}
+                          action={async () => {
+                            await call('delete_invited_student', { p_invite: c.id })
+                            await reloadConvidados()
+                          }}
+                        >
+                          <Trash2 size={16} />
+                        </ActionButton>
+                      </div>
+                    ))}
+                  </>
+                )}
                 {filtered.length ? (
                   filtered.map((s) => (
                     <button className="student-row" key={s.id} onClick={() => setSelected(s.id)}>
@@ -2737,6 +2927,21 @@ export default function App() {
                         </button>
                       ))}
                   </>
+                )}
+                {novoAluno && (
+                  <NovoAlunoSheet
+                    call={call}
+                    onClose={() => setNovoAluno(false)}
+                    onCriado={reloadConvidados}
+                  />
+                )}
+                {emailAluno && (
+                  <EmailAlunoSheet
+                    call={call}
+                    invite={emailAluno}
+                    onClose={() => setEmailAluno(null)}
+                    onSalvo={reloadConvidados}
+                  />
                 )}
               </section>
             )

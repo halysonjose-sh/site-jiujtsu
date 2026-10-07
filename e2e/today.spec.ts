@@ -1,15 +1,13 @@
 import { test, expect } from '@playwright/test'
 
-// Aba Hoje do professor: chamada em 3 toques (Fazer chamada, linha, Salvar),
-// contador "a revisar" zerando e Desfazer do toast.
-// O relógio é fixado às 19:30 de São Paulo (= 22:30 UTC; o Brasil não observa
-// horário de verão): a avulsa iniciada (30 min antes) já começou, a de 20:30 ainda não.
+// Aba Hoje do professor: ver quem fez check-in e excluir o check-in de quem
+// não apareceu. O relógio é fixado às 19:30 de São Paulo (= 22:30 UTC; o
+// Brasil não observa horário de verão): a avulsa iniciada (30 min antes) já
+// começou, a de 20:30 ainda não.
 const hojeSp = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })
 const AGORA = new Date(`${hojeSp()}T22:30:00Z`)
 
-test('professor faz a chamada em 3 toques, zera o contador e desfaz', async ({ page }) => {
-  // Dois percursos completos num teste só: no webkit, com o projeto chromium
-  // rodando em paralelo, 30s (default) estouram no meio da última espera.
+test('professor vê os check-ins e exclui o de quem não apareceu', async ({ page }) => {
   test.setTimeout(120_000)
   await page.clock.setFixedTime(AGORA)
   await page.goto('/')
@@ -17,52 +15,28 @@ test('professor faz a chamada em 3 toques, zera o contador e desfaz', async ({ p
   await expect(page.getByText('Modo demonstração')).toBeVisible()
   await page.getByRole('button', { name: 'Ver como professor' }).click()
 
-  // Aba Hoje é a padrão do professor; o cartão da avulsa mostra as contagens.
+  // Aba Hoje é a padrão do professor; o cartão da avulsa mostra a contagem.
   await expect(page.getByRole('heading', { name: 'Hoje.' })).toBeVisible()
   const cartao = page.locator('.today-card', { hasText: 'Treino avulso' })
-  await expect(cartao).toContainText('1 confirmado · 1 a revisar')
-  // Marina fez check-in pendente: aparece como presença a revisar.
-  await expect(page.getByText('1 presença a revisar')).toBeVisible()
+  await expect(cartao).toContainText('2 alunos fizeram check-in')
 
-  // Toque 1: abre a folha; pendente e confirmada já vem marcadas.
-  await cartao.getByRole('button', { name: 'Fazer chamada' }).click()
+  // Abre a folha de check-ins: Lucas confirmado, Marina pendente.
+  await cartao.getByRole('button', { name: 'Ver check-ins' }).click()
   const folha = page.locator('.sheet-backdrop dialog')
-  await expect(folha.getByRole('checkbox', { name: 'Lucas Almeida' })).toBeChecked()
-  await expect(folha.getByRole('checkbox', { name: 'Marina Santos' })).toBeChecked()
-  await expect(folha.getByRole('checkbox', { name: 'Pedro Oliveira' })).not.toBeChecked()
+  await expect(folha.getByText('Lucas Almeida')).toBeVisible()
+  await expect(folha.getByText('Marina Santos')).toBeVisible()
+  await expect(folha.getByText('Pedro Oliveira')).toHaveCount(0)
 
-  // Toque 2: desmarcar a pendente registra rejeição (o contador precisa zerar).
-  await folha.getByRole('checkbox', { name: 'Marina Santos' }).uncheck()
-
-  // Toque 3: salvar em lote.
-  await folha.getByRole('button', { name: 'Salvar presenças' }).click()
-  await expect(folha.getByText('Chamada salva')).toBeVisible()
-
-  // O contador de pendências da aula zera na aba, atrás da folha.
-  await expect(page.getByText('1 presença a revisar')).toHaveCount(0)
-
-  // Recusa de check-in pendente não oferece Desfazer: produção não tem RPC
-  // que volte a 'pendente'. O toast só existe depois de fechar a folha.
+  // Marina não apareceu no treino: professor exclui o check-in dela.
+  await folha.getByRole('button', { name: 'Excluir check-in de Marina Santos' }).click()
+  await folha.getByRole('button', { name: 'Confirmar' }).click()
+  await expect(page.getByText('Check-in excluído')).toBeVisible()
+  await expect(cartao).toContainText('1 aluno fez check-in')
+  await expect(folha.getByText('Marina Santos')).toHaveCount(0)
   await folha.getByRole('button', { name: 'Fechar' }).click()
-  const toast = page.locator('.toast')
-  await expect(toast).toContainText('Chamada salva')
-  await expect(toast.getByRole('button', { name: 'Desfazer' })).toHaveCount(0)
-
-  // Segundo fluxo, com Desfazer: confirma quem não tinha registro e volta atrás.
-  await cartao.getByRole('button', { name: 'Fazer chamada' }).click()
-  // Espera os dados da folha carregarem (Lucas já confirmado): marcar antes
-  // disso calcula as mudanças contra a lista vazia e desmarcaria Lucas.
-  await expect(folha.getByRole('checkbox', { name: 'Lucas Almeida' })).toBeChecked()
-  await folha.getByRole('checkbox', { name: 'Pedro Oliveira' }).check()
-  await folha.getByRole('button', { name: 'Salvar presenças' }).click()
-  await expect(folha.getByText('Chamada salva')).toBeVisible()
-  await expect(cartao).toContainText('2 confirmados · 0 a revisar')
-  await folha.getByRole('button', { name: 'Fechar' }).click()
-  await toast.getByRole('button', { name: 'Desfazer' }).click()
-  await expect(cartao).toContainText('1 confirmado · 0 a revisar')
 })
 
-test('bloqueia salvar presenças antes do início da aula', async ({ page }) => {
+test('aula sem check-ins mostra estado vazio na folha', async ({ page }) => {
   await page.clock.setFixedTime(AGORA)
   await page.goto('/')
   await page.getByRole('button', { name: 'Conhecer a demonstração' }).click()
@@ -70,9 +44,8 @@ test('bloqueia salvar presenças antes do início da aula', async ({ page }) => 
   await page.getByRole('button', { name: 'Ver como professor' }).click()
 
   const cartao = page.locator('.today-card', { hasText: 'Treino de competição' })
-  await expect(cartao).toBeVisible()
-  await cartao.getByRole('button', { name: 'Fazer chamada' }).click()
+  await expect(cartao).toContainText('Nenhum aluno fez check-in ainda')
+  await cartao.getByRole('button', { name: 'Ver check-ins' }).click()
   const folha = page.locator('.sheet-backdrop dialog')
-  await expect(folha.getByRole('button', { name: 'Salvar presenças' })).toBeDisabled()
-  await expect(folha.getByText('A chamada abre quando a aula começar.')).toBeVisible()
+  await expect(folha.getByText('Nenhum aluno fez check-in nesta aula ainda.')).toBeVisible()
 })

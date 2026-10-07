@@ -6,6 +6,7 @@ import {
   callChanges,
   callUndo,
   summarizeToday,
+  nextSession,
 } from './today'
 import { zonedToUtc } from './schedule'
 
@@ -148,5 +149,28 @@ describe('summarizeToday', () => {
       { id: 'm2' },
     ])
     expect(resumo).toEqual({ reviews: 2, approvals: 2 })
+  })
+})
+describe('nextSession', () => {
+  const AGORA = Date.parse('2026-09-25T12:00:00Z')
+  it('devolve a primeira prevista futura', () => {
+    const lista = [
+      s('passada', '2026-09-25T10:00:00Z', 'prevista', null),
+      s('depois', '2026-09-26T22:00:00Z', 'prevista', null),
+      s('depois2', '2026-09-27T22:00:00Z', 'prevista', null),
+    ]
+    expect(nextSession(lista, AGORA)?.id).toBe('depois')
+  })
+  it('ignora canceladas e realizadas', () => {
+    const lista = [
+      s('c1', '2026-09-26T22:00:00Z', 'cancelada', null),
+      s('r1', '2026-09-26T23:00:00Z', 'realizada', null),
+      s('boa', '2026-09-27T22:00:00Z', 'prevista', null),
+    ]
+    expect(nextSession(lista, AGORA)?.id).toBe('boa')
+  })
+  it('sem aula futura devolve null', () => {
+    expect(nextSession([s('x', '2026-09-25T10:00:00Z', 'prevista', null)], AGORA)).toBeNull()
+    expect(nextSession([], AGORA)).toBeNull()
   })
 })

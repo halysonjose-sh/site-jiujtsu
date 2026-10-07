@@ -32,6 +32,17 @@ export function sessionsOfToday<T extends { startsAt: string; status: StatusSess
   ]
 }
 
+/** Próxima aula depois de hoje: primeira prevista futura, em ordem de horário. */
+export function nextSession<T extends { startsAt: string; status: StatusSessao }>(
+  list: T[],
+  agora: number,
+): T | null {
+  const futuras = list
+    .filter((x) => x.status === 'prevista' && new Date(x.startsAt).getTime() > agora)
+    .sort((a, b) => a.startsAt.localeCompare(b.startsAt))
+  return futuras[0] ?? null
+}
+
 /** Total de presenças a revisar entre as aulas do dia. */
 export function reviewCount(list: { pending: number | null }[]): number {
   return list.reduce((total, x) => total + (x.pending ?? 0), 0)

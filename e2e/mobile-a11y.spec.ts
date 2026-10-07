@@ -98,7 +98,7 @@ test('telas do app sem rolagem lateral, alvos >= 44px e fontes >= 13px', async (
   await audit(page, 'aluno: eu')
 
   // Demonstração como professor: a aba padrão agora é Hoje, onde ficam as
-  // pendências (aprovações e presenças a revisar).
+  // pendências (aprovações de alunos) e o treino do dia com os check-ins.
   await page.getByRole('button', { name: 'Ver como professor' }).click()
   await expect(page.getByText('Aguardando aprovação')).toBeVisible()
   await audit(page, 'professor: hoje com pendência')
@@ -106,13 +106,13 @@ test('telas do app sem rolagem lateral, alvos >= 44px e fontes >= 13px', async (
   await expect(page.getByText('Aguardando aprovação')).toHaveCount(0)
   await audit(page, 'professor: hoje')
 
-  // Folha da chamada é tela nova: audita aberta (fica no top layer do dialog).
+  // Folha de check-ins é tela nova: audita aberta (fica no top layer do dialog).
   await page
     .locator('.today-card', { hasText: 'Treino avulso' })
-    .getByRole('button', { name: 'Fazer chamada' })
+    .getByRole('button', { name: 'Ver check-ins' })
     .click()
   await expect(page.locator('.sheet-backdrop dialog')).toBeVisible()
-  await audit(page, 'professor: folha da chamada')
+  await audit(page, 'professor: folha de check-ins')
   await page.getByRole('button', { name: 'Fechar' }).click()
 
   await page.getByRole('button', { name: 'Alunos' }).first().click()

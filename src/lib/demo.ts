@@ -170,6 +170,10 @@ export function createDemo() {
   ]
   const past = sessions.filter((s) => new Date(s.startsAt).getTime() < Date.now())
   let presences: Presence[] = []
+  // Alunos criados pelo professor, aguardando o cadastro com o e-mail informado.
+  let invites: { id: string; name: string; initialTotal: number; claimEmail: string | null; createdAt: string }[] = [
+    { id: newId('convite'), name: 'Carlos Lima', initialTotal: 12, claimEmail: null, createdAt: new Date().toISOString() },
+  ]
   past.forEach((s, i) => {
     for (const [id, every] of [
       ['lucas', 1],
@@ -638,6 +642,30 @@ export function createDemo() {
         ? students.map((s) => (s.id === a.p_user ? { ...s, memberStatus: 'ativo' } : s))
         : students.filter((s) => s.id !== a.p_user)
     },
+    create_invited_student: (a) => {
+      const invite = {
+        id: newId('convite'),
+        name: String(a.p_name).trim(),
+        initialTotal: Number(a.p_initial_total) || 0,
+        claimEmail: null,
+        createdAt: new Date().toISOString(),
+      }
+      invites = [...invites, invite]
+      return { ...invite, createdAt: invite.createdAt }
+    },
+    set_invited_email: (a) => {
+      const alvo = invites.find((i) => i.id === a.p_invite)
+      if (!alvo) throw new Error('Convite não encontrado ou já usado.')
+      const email = a.p_email == null || String(a.p_email).trim() === '' ? null : String(a.p_email).trim().toLowerCase()
+      invites = invites.map((i) => (i.id === a.p_invite ? { ...i, claimEmail: email } : i))
+    },
+    delete_invited_student: (a) => {
+      const alvo = invites.find((i) => i.id === a.p_invite)
+      if (!alvo) throw new Error('Convite não encontrado ou já usado.')
+      invites = invites.filter((i) => i.id !== a.p_invite)
+    },
+    list_invited_students: () =>
+      [...invites].sort((x, y) => x.createdAt.localeCompare(y.createdAt) || x.name.localeCompare(y.name)),
     update_settings: (a) => void (goal = a.p_goal),
     confirm_presences: (a) => {
       const s = session(a.p_session)
