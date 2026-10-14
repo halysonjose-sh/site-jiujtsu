@@ -10,6 +10,7 @@ import { nextSession, reviewCount, sessionsOfToday, type StatusPresenca } from '
 import {
   friendlyError,
   type Call,
+  type PhotoStore,
   type SessionDetail,
   type SessionView,
   type StudentView,
@@ -28,6 +29,7 @@ export function Today({
   onCounts,
   staff,
   agora,
+  photos,
 }: {
   call: Call
   mutate: Mutate
@@ -39,6 +41,8 @@ export function Today({
   staff?: boolean
   /** Relógio injetável para testes; em produção usa Date.now(). */
   agora?: number
+  /** Resolve as capas dos treinos de hoje; sem ele o cartão fica sem foto. */
+  photos?: PhotoStore
 }) {
   const pendencias = students.filter((s) => s.memberStatus === 'pendente')
   // Uma busca só: hoje + 62 dias. A próxima aula só aparece quando hoje está vazio.
@@ -54,6 +58,23 @@ export function Today({
   const dialogRecusa = useRef<HTMLDialogElement>(null)
   const toast = useToast()
   const aula = sessoes.find((s) => s.id === checkins) ?? null
+  const [covers, setCovers] = useState<Record<string, string>>({})
+  // A capa é decorativa: se falhar, o cartão segue sem foto e sem mensagem de erro.
+  const coversHoje = sessoes
+    .filter((x) => x.cover)
+    .map((x) => x.cover!)
+    .join('|')
+  useEffect(() => {
+    if (!coversHoje || !photos) return
+    let vivo = true
+    photos
+      .urls(coversHoje.split('|'))
+      .then((u) => vivo && setCovers((c) => ({ ...c, ...u })))
+      .catch(() => {})
+    return () => {
+      vivo = false
+    }
+  }, [coversHoje, photos])
   const proxima = data && sessoes.length === 0 ? nextSession(data, agora ?? Date.now()) : null
 
   useEffect(() => {
@@ -167,6 +188,13 @@ export function Today({
           const checkinsCount = staff ? (s.checkins ?? 0) : null
           return (
             <li key={s.id} className="today-card">
+              {s.status !== 'cancelada' && s.cover && covers[s.cover] && (
+                <img
+                  className="today-cover"
+                  src={covers[s.cover]}
+                  alt={`Foto do treino ${s.title}`}
+                />
+              )}
               <div className="today-card-head">
                 <span className="today-time">{timeLabel(s.startsAt)}</span>
                 <h3>{s.title}</h3>

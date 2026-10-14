@@ -2703,6 +2703,12 @@ nav button.active svg {
   border-radius: 14px;
   background: #fffef9;
 }
+.today-cover {
+  width: 100%;
+  height: 140px;
+  border-radius: 10px;
+  object-fit: cover;
+}
 .today-card-head {
   display: flex;
   align-items: baseline;

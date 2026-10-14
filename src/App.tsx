@@ -2809,6 +2809,7 @@ export default function App() {
                   onChanged={refresh}
                   onOpenSession={openSession}
                   onCounts={setReviewsToday}
+                  photos={demo ? demo.photos : supabasePhotos}
                   staff
                 />
                 <Avisos call={call} staff />

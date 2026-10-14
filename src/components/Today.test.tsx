@@ -2,7 +2,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { Today } from './Today'
 import { ToastProvider } from './Toast'
-import type { Call, SessionDetail, SessionView, StudentView } from '../lib/api'
+import type { Call, PhotoStore, SessionDetail, SessionView, StudentView } from '../lib/api'
 
 const HOJE = '2026-09-25'
 // Relógio fixo (09:00 em SP) para o teste não depender da hora real.
@@ -72,7 +72,7 @@ const detalhe: SessionDetail = {
 
 function setup(
   sessoes: SessionView[],
-  opts: { detail?: SessionDetail; students?: StudentView[] } = {},
+  opts: { detail?: SessionDetail; students?: StudentView[]; photos?: PhotoStore } = {},
 ) {
   const onChanged = vi.fn(async () => {})
   const onOpenSession = vi.fn()
@@ -95,6 +95,7 @@ function setup(
         onCounts={onCounts}
         staff
         agora={AGORA}
+        photos={opts.photos}
       />
     </ToastProvider>,
   )
@@ -111,6 +112,15 @@ describe('Today (professor)', () => {
     expect(await screen.findByText('2 alunos fizeram check-in')).toBeTruthy()
   })
 
+  it('mostra a foto de capa do treino de hoje', async () => {
+    const photos = {
+      urls: vi.fn(async () => ({ 'capa.webp': 'blob:capa' })),
+    } as unknown as PhotoStore
+    setup([sessao({ id: 'aula1', startsAt: INICIADA, cover: 'capa.webp' })], { photos })
+    const img = (await screen.findByAltText('Foto do treino Jiu-jítsu adulto')) as HTMLImageElement
+    expect(img.src).toContain('blob:capa')
+  })
+
   it('mostra estado vazio de check-in quando ninguém fez', async () => {
     setup([sessao({ id: 'aula1', startsAt: INICIADA, checkins: 0 })])
     expect(await screen.findByText('Nenhum aluno fez check-in ainda')).toBeTruthy()
@@ -123,7 +133,9 @@ describe('Today (professor)', () => {
     await waitFor(() => expect(folha.textContent).toContain('Lucas Almeida'))
     expect(folha.textContent).toContain('Marina Santos')
     expect(folha.textContent).not.toContain('Pedro Oliveira')
-    fireEvent.click(within(folha).getByRole('button', { name: 'Excluir check-in de Marina Santos' }))
+    fireEvent.click(
+      within(folha).getByRole('button', { name: 'Excluir check-in de Marina Santos' }),
+    )
     // ActionButton com confirm abre diálogo de confirmação antes de executar.
     fireEvent.click(await screen.findByRole('button', { name: 'Confirmar' }))
     await waitFor(() =>
@@ -136,10 +148,9 @@ describe('Today (professor)', () => {
   })
 
   it('folha de check-ins vazia mostra a frase de estado vazio', async () => {
-    setup(
-      [sessao({ id: 'aula1', startsAt: INICIADA, checkins: 0 })],
-      { detail: { ...detalhe, students: [] } },
-    )
+    setup([sessao({ id: 'aula1', startsAt: INICIADA, checkins: 0 })], {
+      detail: { ...detalhe, students: [] },
+    })
     fireEvent.click(await screen.findByRole('button', { name: 'Ver check-ins' }))
     const folha = await screen.findByRole('dialog')
     await waitFor(() =>
@@ -148,9 +159,7 @@ describe('Today (professor)', () => {
   })
 
   it('sem aula hoje mostra a próxima aula da turma', async () => {
-    setup([
-      sessao({ id: 'proxima', startsAt: '2026-09-28T22:00:00Z', title: 'Jiu-jítsu kids' }),
-    ])
+    setup([sessao({ id: 'proxima', startsAt: '2026-09-28T22:00:00Z', title: 'Jiu-jítsu kids' })])
     expect(await screen.findByText('Nenhuma aula hoje')).toBeTruthy()
     expect(await screen.findByText('Jiu-jítsu kids')).toBeTruthy()
     expect(screen.getByText(/Próxima aula:/)).toBeTruthy()
