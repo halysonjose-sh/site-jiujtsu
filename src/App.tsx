@@ -1933,7 +1933,7 @@ function MyProfileSection({
         <>
           <p className="muted">
             Faixa {me.belt} · {me.degrees} {me.degrees === 1 ? 'grau' : 'graus'} · Na equipe desde{' '}
-            {dateLabel(me.joinedAt)}.
+            {dateLabel(me.joinedAt.slice(0, 10))}.
           </p>
           <ActionButton
             className="secondary"
