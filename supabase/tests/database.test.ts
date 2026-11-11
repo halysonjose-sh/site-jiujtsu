@@ -1002,81 +1002,176 @@ describe('eleger dono e excluir conta', () => {
   })
 })
 
-describe('aluno criado pelo professor (convite por e-mail)', () => {
-  const emailConvidado = 'convidado@test.local'
-  let convite: string
-  it('professor cria convite com nome e aulas anteriores', async () => {
-    const r = await one(teacher, 'select public.create_invited_student($1,$2)', [
-      'Carlos Lima',
-      12,
+describe('aluno criado pelo professor (sem conta no aplicativo)', () => {
+  const carlos = id(60)
+  const marina = id(61)
+  const time = id(62)
+  const emailCarlos = 'carlos@test.local'
+  const lote = (itens: unknown[]) => JSON.stringify(itens)
+
+  it('professor cria vários alunos de uma vez, com aulas anteriores e e-mail', async () => {
+    const r = await one(teacher, 'select public.create_students($1::jsonb)', [
+      lote([
+        { id: carlos, name: 'Carlos Lima', email: emailCarlos, initialTotal: 12 },
+        { id: marina, name: 'Marina Souza', initialTotal: 0 },
+      ]),
     ])
-    convite = r.id
-    expect(r.name).toBe('Carlos Lima')
-    expect(r.initialTotal).toBe(12)
-    expect((await one(teacher, 'select public.list_invited_students()'))).toHaveLength(1)
+    expect(r).toHaveLength(2)
+    const lista = await one(teacher, 'select public.list_students()')
+    const c = lista.find((s: any) => s.id === carlos)
+    expect(c.name).toBe('Carlos Lima')
+    // Nasce como aluno normal da equipe, já com as aulas anteriores contadas.
+    expect(c.memberStatus).toBe('ativo')
+    expect(c.total).toBe(12)
+    expect(c.hasAccount).toBe(false)
+    expect(c.email).toBe(emailCarlos)
+    expect(lista.find((s: any) => s.id === marina).email).toBeNull()
   })
-  it('aluno comum não cria convite', async () => {
-    await expect(
-      asUser(novo, 'select public.create_invited_student($1,$2)', ['Fulano', 0]),
-    ).rejects.toThrow()
+
+  it('aluno sem conta recebe presença e graduação como qualquer outro', async () => {
+    const aula = await sessionAt('-1 hour', 'realizada')
+    await asUser(teacher, 'select public.teacher_add_presence($1,$2)', [aula, carlos])
+    const d = await one(teacher, 'select public.student_detail($1)', [carlos])
+    expect(d.total).toBe(13)
+    expect(d.attendances).toHaveLength(1)
+    expect(d.held).toBeGreaterThanOrEqual(13)
+    await asUser(teacher, 'select public.set_initial($1,$2,$3,$4)', [carlos, 'azul', 1, 0])
+    expect((await one(teacher, 'select public.student_detail($1)', [carlos])).belt).toBe('azul')
   })
-  it('nome curto e total negativo são recusados', async () => {
+
+  it('aluno comum não cria alunos', async () => {
     await expect(
-      asUser(teacher, 'select public.create_invited_student($1,$2)', ['C', 0]),
+      asUser(a, 'select public.create_students($1::jsonb)', [
+        lote([{ id: id(70), name: 'Fulano', initialTotal: 0 }]),
+      ]),
+    ).rejects.toThrow(/professor/)
+  })
+
+  it('nome curto, e-mail inválido e aulas inválidas derrubam o lote inteiro', async () => {
+    const antes = (await one(teacher, 'select public.list_students()')).length
+    await expect(
+      asUser(teacher, 'select public.create_students($1::jsonb)', [
+        lote([{ id: id(71), name: 'C', initialTotal: 0 }]),
+      ]),
     ).rejects.toThrow(/nome/)
     await expect(
-      asUser(teacher, 'select public.create_invited_student($1,$2)', ['Carlos Dois', -1]),
-    ).rejects.toThrow(/aulas/)
-  })
-  it('professor informa o e-mail depois; e-mail é normalizado', async () => {
-    await asUser(teacher, 'select public.set_invited_email($1,$2)', [convite, '  Convidado@TEST.local '])
-    const lista = await one(teacher, 'select public.list_invited_students()')
-    expect(lista[0].claimEmail).toBe('convidado@test.local')
-  })
-  it('e-mail inválido é recusado', async () => {
-    await expect(
-      asUser(teacher, 'select public.set_invited_email($1,$2)', [convite, 'sem-arroba']),
+      asUser(teacher, 'select public.create_students($1::jsonb)', [
+        lote([{ id: id(71), name: 'Fulano', email: 'sem-arroba', initialTotal: 0 }]),
+      ]),
     ).rejects.toThrow(/E-mail/)
+    await expect(
+      asUser(teacher, 'select public.create_students($1::jsonb)', [
+        lote([{ id: id(71), name: 'Fulano', initialTotal: -3 }]),
+      ]),
+    ).rejects.toThrow(/aulas/)
+    // Nada foi criado: o lote é atômico.
+    expect((await one(teacher, 'select public.list_students()')).length).toBe(antes)
+    expect(await n('select count(*) from public.profiles where name=$1', ['Fulano'])).toBe(0)
   })
-  it('cadastro com o e-mail do convite entra ativo com as aulas anteriores', async () => {
-    await db.query(
-      'insert into auth.users(id,email,raw_user_meta_data) values ($1,$2,$3::jsonb)',
-      [id(50), emailConvidado, JSON.stringify({ name: 'Carlos Lima', class_code: 'OUTRO-CODIGO-99' })],
-    )
+
+  it('e-mail repetido é recusado (no lote e já cadastrado)', async () => {
+    await expect(
+      asUser(teacher, 'select public.create_students($1::jsonb)', [
+        lote([{ id: id(72), name: 'Outro', email: emailCarlos, initialTotal: 0 }]),
+      ]),
+    ).rejects.toThrow(/e-mail/)
+    await expect(
+      asUser(teacher, 'select public.create_students($1::jsonb)', [
+        lote([
+          { id: id(73), name: 'Ana Paula', email: 'mesmo@test.local', initialTotal: 0 },
+          { id: id(74), name: 'Bruno Silva', email: 'mesmo@test.local', initialTotal: 0 },
+        ]),
+      ]),
+    ).rejects.toThrow(/e-mail/)
+    expect(
+      await n('select count(*) from public.profiles where id = any($1::uuid[])', [
+        [id(73), id(74)],
+      ]),
+    ).toBe(0)
+  })
+
+  it('foto fora da pasta do aluno é recusada; foto válida é guardada', async () => {
+    const equipe = (await db.query<any>("select id from public.teams where slug='minha-turma'"))
+      .rows[0].id
+    await expect(
+      asUser(teacher, 'select public.create_students($1::jsonb)', [
+        lote([
+          {
+            id: id(75),
+            name: 'Com Foto',
+            initialTotal: 0,
+            avatarPath: 'avatars/outra-equipe/' + id(75) + '/a.jpg',
+          },
+        ]),
+      ]),
+    ).rejects.toThrow(/foto/)
+    await asUser(teacher, 'select public.create_students($1::jsonb)', [
+      lote([
+        {
+          id: id(76),
+          name: 'Com Foto',
+          initialTotal: 0,
+          avatarPath: `avatars/${equipe}/${id(76)}/${id(99)}.jpg`,
+        },
+      ]),
+    ])
+    expect(
+      (await db.query('select avatar_path from public.profiles where id=$1', [id(76)])).rows[0]
+        .avatar_path,
+    ).toBe(`avatars/${equipe}/${id(76)}/${id(99)}.jpg`)
+  })
+
+  it('professor informa e troca o e-mail do aluno sem conta', async () => {
+    await asUser(teacher, 'select public.set_student_email($1,$2)', [marina, ' MARINA@Test.local '])
+    expect(
+      (await db.query('select email from public.profiles where id=$1', [marina])).rows[0].email,
+    ).toBe('marina@test.local')
+    await expect(
+      asUser(teacher, 'select public.set_student_email($1,$2)', [marina, 'sem-arroba']),
+    ).rejects.toThrow(/E-mail/)
+    await expect(
+      asUser(teacher, 'select public.set_student_email($1,$2)', [marina, emailCarlos]),
+    ).rejects.toThrow(/e-mail/)
+  })
+
+  it('aluno que se cadastra com o e-mail informado entra no mesmo perfil, com o histórico', async () => {
+    const codigo = await one(teacher, 'select public.get_join_code()')
+    await db.query('insert into auth.users(id,email,raw_user_meta_data) values ($1,$2,$3::jsonb)', [
+      time,
+      emailCarlos,
+      JSON.stringify({ name: 'Carlos Lima', class_code: codigo }),
+    ])
+    // O perfil é o mesmo: a conta foi vinculada, não nasceu outro aluno.
+    expect(
+      (await db.query('select id,auth_id from public.profiles where auth_id=$1', [time])).rows[0],
+    ).toEqual({ id: carlos, auth_id: time })
     const membro = (
-      await db.query('select role,status,initial_total from public.team_members where user_id=$1', [id(50)])
+      await db.query('select role,status,initial_total from public.team_members where user_id=$1', [
+        carlos,
+      ])
     ).rows[0]
     expect(membro).toEqual({ role: 'aluno', status: 'ativo', initial_total: 12 })
-    // Convite sai da lista de aguardando acesso.
-    expect(await one(teacher, 'select public.list_invited_students()')).toHaveLength(0)
-    // Total e frequência: 12 aulas anteriores contam em total e held
-    // (held soma também as aulas já realizadas desde a entrada, criadas por
-    // testes anteriores — por isso o esperado é calculado, não fixo).
-    const realizadas = await n(
-      `select count(*) from public.class_sessions
-       where team_id = (select id from public.teams where slug='minha-turma')
-        and status <> 'cancelada' and starts_at <= now()
-        and (starts_at at time zone 'America/Sao_Paulo')::date >= (now() at time zone 'America/Sao_Paulo')::date`,
-    )
-    const d = await one(teacher, 'select public.student_detail($1)', [id(50)])
-    expect(d.total).toBe(12)
-    expect(d.held).toBe(12 + realizadas)
+    // Ele entra no aplicativo como aluno ativo e enxerga o próprio histórico.
+    const settings = await one(time, 'select public.get_settings()')
+    expect(settings.role).toBe('aluno')
+    expect(settings.status).toBe('ativo')
+    const d = await one(time, 'select public.student_detail($1)', [carlos])
+    expect(d.total).toBe(13)
+    expect(d.hasAccount).toBe(true)
   })
-  it('convite já usado não vincula de novo; novo cadastro segue pendente', async () => {
-    await db.query(
-      'insert into auth.users(id,email,raw_user_meta_data) values ($1,$2,$3::jsonb)',
-      [id(51), emailConvidado, JSON.stringify({ name: 'Outro Carlos', class_code: 'OUTRO-CODIGO-99' })],
+
+  it('remover aluno sem conta apaga o histórico; aluno com conta não é removido', async () => {
+    // O aluno tem conta: o caminho é marcar inativo.
+    await expect(asUser(teacher, 'select public.remove_student($1)', [carlos])).rejects.toThrow(
+      /conta/,
     )
-    expect(
-      (await db.query('select status from public.team_members where user_id=$1', [id(51)])).rows[0],
-    ).toEqual({ status: 'pendente' })
+    const antes = (await one(teacher, 'select public.list_students()')).length
+    await asUser(teacher, 'select public.remove_student($1)', [marina])
+    expect((await one(teacher, 'select public.list_students()')).length).toBe(antes - 1)
+    expect(await n('select count(*) from public.profiles where id=$1', [marina])).toBe(0)
   })
-  it('excluir convite reivindicado falha; convite aberto é excluído', async () => {
-    await expect(
-      asUser(teacher, 'select public.delete_invited_student($1)', [convite]),
-    ).rejects.toThrow(/já usado/)
-    const outro = await one(teacher, 'select public.create_invited_student($1,$2)', ['Duda Souza', 0])
-    await asUser(teacher, 'select public.delete_invited_student($1)', [outro.id])
-    expect(await one(teacher, 'select public.list_invited_students()')).toHaveLength(0)
+
+  it('o convite antigo saiu de cena', async () => {
+    await expect(db.query('select * from public.invited_students')).rejects.toThrow()
   })
 })

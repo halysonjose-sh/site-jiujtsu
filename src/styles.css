@@ -452,7 +452,8 @@ dialog p {
   background: color-mix(in srgb, var(--green) 9%, #fff);
   border: 1px solid color-mix(in srgb, var(--green) 9%, #fff);
   border-radius: 8px;
-  color: #66745f;
+  /* Escuro o bastante para passar no contraste AA sobre o fundo tingido. */
+  color: #5c6a56;
   font-size: 13px;
   line-height: 1.5;
   margin-top: 26px;
@@ -473,7 +474,7 @@ dialog p {
 }
 .demo-entry-detail {
   display: block;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 400;
   color: var(--muted);
   margin-top: 3px;
@@ -1138,6 +1139,19 @@ dialog p {
   color: color-mix(in srgb, var(--green) 75%, #fff);
   letter-spacing: 0.02em;
 }
+/* Aluno criado pelo professor: está na equipe, mas ainda não tem conta no app. */
+.account-pill {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--green) 25%, #fff);
+  padding: 2px 8px;
+  border-radius: 5px;
+  color: color-mix(in srgb, var(--green) 75%, #fff);
+  white-space: nowrap;
+}
 .empty {
   padding: 28px 5px;
   color: var(--muted);
@@ -1198,15 +1212,16 @@ dialog p {
 }
 .password-wrap input {
   width: 100%;
-  padding-right: 48px;
+  padding-right: 52px;
 }
 .password-toggle {
   position: absolute;
   right: 4px;
   top: 50%;
   transform: translateY(-50%);
-  width: 40px;
-  height: 40px;
+  /* Alvo de toque de 44 px (regra do plano de UX mobile). */
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2530,6 +2545,48 @@ nav button.active svg {
   min-width: var(--touch);
   padding: 0;
   border-radius: 50%;
+}
+
+/* Folha "Adicionar alunos": foto escolhida e lista dos que já estão prontos. */
+.foto-previa {
+  display: block;
+  width: 76px;
+  height: 76px;
+  object-fit: cover;
+  border-radius: 14px;
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  background: var(--cream);
+}
+.aluno-lista {
+  list-style: none;
+  margin: 18px 0 6px;
+  padding: 0;
+}
+.aluno-lista li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.aluno-lista .student-name {
+  flex: 1;
+  min-width: 0;
+}
+.aluno-lista .avatar.small {
+  width: 40px;
+  height: 40px;
+}
+.foto-mini {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.initial-form .secondary.full {
+  margin-top: 14px;
 }
 
 /* Menu de aÃ§Ãµes (OverflowMenu) */

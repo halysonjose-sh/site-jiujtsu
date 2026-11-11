@@ -42,6 +42,8 @@ const aluno = (over: Partial<StudentView>): StudentView => ({
   avatarPath: null,
   contact: null,
   birthDate: null,
+  email: null,
+  hasAccount: true,
   joinedAt: HOJE,
   attendances: [],
   events: [],

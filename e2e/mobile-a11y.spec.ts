@@ -143,7 +143,7 @@ test('telas do app sem rolagem lateral, alvos >= 44px e fontes >= 13px', async (
   // Dia com aula já realizada: abre o painel do treino. Espera as células
   // carregarem antes de capturar: sem isso labels sai vazio e o cálculo
   // quebra (list_sessions do demo responde depois da primeira pintura).
-  const cells = page.getByRole('gridcell', { name: /aula\(s\)/ })
+  const cells = page.getByRole('gridcell', { name: /:\s\d+ aulas?$/ })
   await cells.first().waitFor()
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })
   const labels = await cells.evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')!))

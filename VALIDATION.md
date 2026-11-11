@@ -16,10 +16,32 @@
 - Demonstração atualizada: perfil do dono com faixa preta, edição de perfil de professor e de aluno, eleger dono, código de professor visível em Configurações. Exclusão de conta é indisponível na demonstração.
 - Não executado: `npm run test:e2e` e `npm run test:supabase` para os novos fluxos; validação em projeto Supabase real permanece pendente (o projeto não está conectado).
 
+## Aluno sem conta no aplicativo — 11/11/2026
+
+- Migration `202611110001_aluno_sem_conta.sql` criada: a identidade do aluno (`profiles.id`) passa a ser separada da conta de login (`profiles.auth_id`, vazio enquanto o aluno não entra). O aluno criado pelo professor nasce ativo na equipe, com as aulas anteriores já contando no total e na frequência — presença, graduação e lista funcionam como para qualquer outro aluno.
+- Funções novas: `create_students` (lote atômico com nome, e-mail, aulas anteriores e foto), `set_student_email` (o professor informa ou troca o e-mail do aluno sem conta) e `remove_student` (apaga o aluno sem conta e o histórico dele; aluno com conta só fica inativo). A tabela `invited_students` e as funções de convite saem de cena.
+- No cadastro, o e-mail informado bate com o aluno sem conta e a conta é vinculada a ele: entra ativo, com aulas anteriores, foto e presenças preservadas.
+- Interface: folha "Adicionar alunos" (`src/components/NovoAluno.tsx`) cadastra vários alunos de uma vez (foto opcional); selo "sem conta" na lista de alunos; campo de e-mail no perfil do aluno; "Remover aluno" no menu do aluno.
+- Suíte PGlite: 60 testes passaram, incluindo os novos (lote de três alunos, recusa do lote inteiro, e-mail repetido, foto fora da pasta do aluno, aluno sem conta com presença e graduação, entrada com o e-mail informado e remoção).
+- `npm test`: 201 testes passaram (17 arquivos). Cobertura: 95,2% de branches (mínimo 90%). `npm run build` (tsc + vite) passou.
+- Playwright em Chromium 360 px: 21 testes passaram, incluindo os dois novos (cadastro de vários alunos de uma vez e presença lançada para o aluno sem conta).
+- Também corrigidos testes que já falhavam antes desta entrega: o localizador do calendário (`aula(s)` nunca casava com o rótulo real "1 aula"), o texto desatualizado da equipe técnica na Gestão e o acesso às ações do professor da equipe.
+- Corrigidas as violações de acessibilidade da tela de acesso que o próprio projeto apontava: botão de mostrar senha com 40 px, texto de 12,5 px e contraste do aviso de preparação.
+- Não executado: `npm run test:e2e` no WebKit (faltam `libicu74` e `libjpeg-turbo8` no sistema, que exigem sudo). A validação em projeto Supabase real permanece pendente: o Storage, as políticas de foto do aluno e o vínculo do cadastro com o aluno sem conta só podem ser confirmados com o projeto conectado.
+
+## Supabase local e validação no banco real — 11/11/2026
+
+- Causa do "não consigo logar" local: não existia `.env.local`, então `supabase` era `null` e a tela de acesso respondia "A equipe ainda não foi conectada" (`src/lib/api.ts`, `src/App.tsx`). O projeto foi entregue com a conexão preparada, não feita.
+- Subido o Supabase local **com Podman** (o Docker não está instalado nesta máquina): `podman system service` + `DOCKER_HOST=unix://$XDG_RUNTIME_DIR/podman/podman.sock` e `npx supabase start`. As 15 migrations foram aplicadas no PostgreSQL real, incluindo `202611110001_aluno_sem_conta.sql`. O CLI também exigia o diretório `supabase/snippets`, que não existia (agora tem `.gitkeep`).
+- `.env.local` criado com a URL local e a chave **anon** (o arquivo é ignorado pelo git). Com ele, o login passa a funcionar de verdade.
+- `npm run test:supabase`: 3 testes HTTP passaram (Auth, PostgREST e concorrência) — a primeira execução dessa suíte.
+- Fluxo validado no navegador contra o banco real: cadastro com "criar turma" (a conta vira dona da equipe e o código de entrada é gerado na hora), login, lista de alunos e a feature nova — aluno sem conta criado com foto, e-mail e 7 aulas anteriores, foto confirmada no Storage e exibida no perfil, total com as aulas anteriores. A foto do aluno no Storage e as políticas do bucket só puderam ser checadas aqui.
+- `supabase/bootstrap.sql.example` estava desatualizado (referenciava a tabela `class_settings`, removida na v2, e o papel em `profiles.role`, obsoleto). Reescrito para o modelo atual: o caminho normal é "criar turma" no cadastro; o arquivo serve para ajustar uma conta existente e gerar um código de entrada.
+
 ## Limites da validação
 
-- O usuário ainda não possui Supabase e pediu para deixar a conexão preparada. Cadastro, confirmação e recuperação por e-mail precisam ser validados após conectar um projeto e configurar SMTP.
-- O Supabase local não iniciou porque o Docker Desktop/daemon Linux está desligado. `npm run test:supabase` detectou a ausência e terminou com erro explícito; seus três testes HTTP não foram executados.
+- O usuário ainda não possui Supabase na nuvem e pediu para deixar a conexão preparada. Cadastro, confirmação e recuperação por e-mail em um projeto real ainda precisam ser validados depois de conectar o projeto e configurar SMTP — o Inbucket local cobre o caminho, não a entrega real dos e-mails.
+- O Supabase local roda com Podman nesta máquina (sem Docker); o comportamento do Auth e do Storage é o do software do Supabase, mas o servidor de e-mail é o Inbucket local. A suíte HTTP (`npm run test:supabase`) passou com essa instância.
 - PGlite usa PostgreSQL real, mas em uma conexão. A verificação de duplicação local não comprova concorrência entre sessões do servidor. A suíte HTTP preparada verifica chamadas paralelas contra Supabase local quando o Docker estiver disponível.
 - Emulação WebKit não equivale a instalação em iPhone físico. A instalação em Android e iPhone físicos e o ciclo real completo com e-mails permanecem para a ativação da turma.
 - A publicação inicial serve para revisão privada; acesso dos alunos e persistência real exigem concluir a configuração descrita no README.

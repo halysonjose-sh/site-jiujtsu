@@ -50,6 +50,12 @@ type DemoStudent = {
   avatarPath: string | null
   contact: string | null
   birthDate: string | null
+  /** E-mail informado pelo professor (aluno criado sem conta no aplicativo). */
+  email: string | null
+  /** O aluno já tem conta no aplicativo? */
+  hasAccount: boolean
+  /** Aulas anteriores informadas pelo professor no cadastro. */
+  initialTotal: number
   joinedAt: string
 }
 const TEAM = 't-demo'
@@ -126,6 +132,9 @@ export function createDemo() {
       avatarPath: null,
       contact: '(11) 98888-1234',
       birthDate: '1995-03-12',
+      email: null,
+      hasAccount: true,
+      initialTotal: 0,
       joinedAt: addDays(today, -60),
     },
     {
@@ -139,6 +148,9 @@ export function createDemo() {
       avatarPath: null,
       contact: null,
       birthDate: '2001-11-02',
+      email: null,
+      hasAccount: true,
+      initialTotal: 0,
       joinedAt: addDays(today, -45),
     },
     {
@@ -152,6 +164,9 @@ export function createDemo() {
       avatarPath: null,
       contact: null,
       birthDate: null,
+      email: null,
+      hasAccount: true,
+      initialTotal: 0,
       joinedAt: addDays(today, -30),
     },
     {
@@ -165,15 +180,32 @@ export function createDemo() {
       avatarPath: null,
       contact: null,
       birthDate: null,
+      email: null,
+      hasAccount: true,
+      initialTotal: 0,
+      joinedAt: today,
+    },
+    // Aluno criado pelo professor: já está na equipe (o professor dá presença e
+    // gradua), mas ainda não tem conta no aplicativo.
+    {
+      id: 'carlos',
+      name: 'Carlos Lima',
+      revision: 0,
+      memberStatus: 'ativo',
+      initial: null,
+      events: [],
+      kinds: {},
+      avatarPath: null,
+      contact: null,
+      birthDate: null,
+      email: null,
+      hasAccount: false,
+      initialTotal: 12,
       joinedAt: today,
     },
   ]
   const past = sessions.filter((s) => new Date(s.startsAt).getTime() < Date.now())
   let presences: Presence[] = []
-  // Alunos criados pelo professor, aguardando o cadastro com o e-mail informado.
-  let invites: { id: string; name: string; initialTotal: number; claimEmail: string | null; createdAt: string }[] = [
-    { id: newId('convite'), name: 'Carlos Lima', initialTotal: 12, claimEmail: null, createdAt: new Date().toISOString() },
-  ]
   past.forEach((s, i) => {
     for (const [id, every] of [
       ['lucas', 1],
@@ -276,6 +308,7 @@ export function createDemo() {
   }
   const view = (s: DemoStudent): StudentView => {
     const rank = currentRank({ ...s, attendances: [] })
+    const contagem = countPresences(presences, s.id, s.events)
     return {
       id: s.id,
       name: s.name,
@@ -284,18 +317,24 @@ export function createDemo() {
       revision: s.revision,
       belt: rank.belt,
       degrees: rank.degrees,
-      ...countPresences(presences, s.id, s.events),
+      // As aulas anteriores informadas no cadastro entram no total e na frequência.
+      total: contagem.total + s.initialTotal,
+      cycle: contagem.cycle,
       today,
       initialSet: !!s.initial || s.events.length > 0,
-      held: sessions.filter(
-        (x) =>
-          x.status !== 'cancelada' &&
-          new Date(x.startsAt).getTime() <= Date.now() &&
-          localDate(x.startsAt) >= s.joinedAt,
-      ).length,
+      held:
+        s.initialTotal +
+        sessions.filter(
+          (x) =>
+            x.status !== 'cancelada' &&
+            new Date(x.startsAt).getTime() <= Date.now() &&
+            localDate(x.startsAt) >= s.joinedAt,
+        ).length,
       avatarPath: s.avatarPath,
       contact: s.contact,
       birthDate: s.birthDate,
+      email: s.email,
+      hasAccount: s.hasAccount,
       joinedAt: s.joinedAt,
       attendances: presences
         .filter((p) => p.studentId === s.id)
@@ -348,6 +387,8 @@ export function createDemo() {
     avatarPath: null,
     contact: professor.contact,
     birthDate: professor.birthDate,
+    email: null,
+    hasAccount: true,
     joinedAt: addDays(today, -400),
     attendances: [],
     events: [
@@ -642,30 +683,74 @@ export function createDemo() {
         ? students.map((s) => (s.id === a.p_user ? { ...s, memberStatus: 'ativo' } : s))
         : students.filter((s) => s.id !== a.p_user)
     },
-    create_invited_student: (a) => {
-      const invite = {
-        id: newId('convite'),
-        name: String(a.p_name).trim(),
-        initialTotal: Number(a.p_initial_total) || 0,
-        claimEmail: null,
-        createdAt: new Date().toISOString(),
-      }
-      invites = [...invites, invite]
-      return { ...invite, createdAt: invite.createdAt }
+    // O professor cadastra alunos direto na equipe (sem conta no aplicativo).
+    create_students: (a) => {
+      if (role !== 'professor') throw new Error('Somente o professor pode fazer isso.')
+      const itens =
+        (a.p_students as {
+          id: string
+          name: string
+          email?: string
+          initialTotal?: number
+          avatarPath?: string
+        }[]) ?? []
+      if (!itens.length) throw new Error('Adicione ao menos um aluno.')
+      const criados = itens.map((i) => {
+        const nome = String(i.name ?? '').trim()
+        if (nome.length < 2) throw new Error('Informe o nome completo do aluno.')
+        const email = i.email ? String(i.email).trim().toLowerCase() : null
+        if (email && students.some((s) => s.email === email))
+          throw new Error('Este e-mail já está cadastrado na equipe.')
+        const novo: DemoStudent = {
+          id: i.id || newId('aluno'),
+          name: nome,
+          revision: 0,
+          memberStatus: 'ativo',
+          initial: null,
+          events: [],
+          kinds: {},
+          avatarPath: i.avatarPath ?? null,
+          contact: null,
+          birthDate: null,
+          email,
+          hasAccount: false,
+          initialTotal: Number(i.initialTotal) || 0,
+          joinedAt: today,
+        }
+        students = [...students, novo]
+        return {
+          id: novo.id,
+          name: novo.name,
+          email: novo.email,
+          initialTotal: novo.initialTotal,
+          avatarPath: novo.avatarPath,
+          hasAccount: false,
+        }
+      })
+      return criados
     },
-    set_invited_email: (a) => {
-      const alvo = invites.find((i) => i.id === a.p_invite)
-      if (!alvo) throw new Error('Convite não encontrado ou já usado.')
-      const email = a.p_email == null || String(a.p_email).trim() === '' ? null : String(a.p_email).trim().toLowerCase()
-      invites = invites.map((i) => (i.id === a.p_invite ? { ...i, claimEmail: email } : i))
+    set_student_email: (a) => {
+      if (role !== 'professor') throw new Error('Somente o professor pode fazer isso.')
+      const alvo = students.find((s) => s.id === a.p_user)
+      if (!alvo) throw new Error('Aluno não encontrado.')
+      if (alvo.hasAccount) throw new Error('Este aluno já tem conta no aplicativo.')
+      const email =
+        a.p_email == null || String(a.p_email).trim() === ''
+          ? null
+          : String(a.p_email).trim().toLowerCase()
+      if (email && students.some((s) => s.id !== alvo.id && s.email === email))
+        throw new Error('Este e-mail já está cadastrado na equipe.')
+      alvo.email = email
     },
-    delete_invited_student: (a) => {
-      const alvo = invites.find((i) => i.id === a.p_invite)
-      if (!alvo) throw new Error('Convite não encontrado ou já usado.')
-      invites = invites.filter((i) => i.id !== a.p_invite)
+    remove_student: (a) => {
+      if (role !== 'professor') throw new Error('Somente o professor pode fazer isso.')
+      const alvo = students.find((s) => s.id === a.p_user)
+      if (!alvo) throw new Error('Aluno não encontrado.')
+      if (alvo.hasAccount)
+        throw new Error('Este aluno já tem conta no aplicativo. Marque-o como inativo.')
+      students = students.filter((s) => s.id !== alvo.id)
+      presences = presences.filter((p) => p.studentId !== alvo.id)
     },
-    list_invited_students: () =>
-      [...invites].sort((x, y) => x.createdAt.localeCompare(y.createdAt) || x.name.localeCompare(y.name)),
     update_settings: (a) => void (goal = a.p_goal),
     confirm_presences: (a) => {
       const s = session(a.p_session)

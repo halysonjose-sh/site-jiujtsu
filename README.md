@@ -10,19 +10,41 @@ Sem variáveis de ambiente, a tela de acesso informa que a turma está em prepar
 
 ## Conectar o Supabase
 
-1. Crie um projeto Supabase dedicado e aplique `supabase/migrations/202609050001_tatame.sql` no SQL Editor (ou use o CLI de migrations).
-2. Copie `.env.example` para `.env.local`. Preencha `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` com a URL e a chave **pública** publishable/anon. Nunca use `service_role` em variáveis `VITE_*`.
+1. Crie um projeto Supabase dedicado e aplique **todas** as migrations de `supabase/migrations/`, na ordem dos nomes (é o que o CLI faz). No SQL Editor do Supabase, cole os arquivos em ordem; o primeiro é `202609050001_tatame.sql`.
+2. Copie `.env.example` para `.env.local`. Preencha `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` com a URL e a chave **pública** publishable/anon. Nunca use `service_role` em variáveis `VITE_*`. Sem esse arquivo (ou com a chave de exemplo `your-public-anon-key`), o aplicativo fica no modo "equipe não conectada" e não há login.
 3. Em Authentication, habilite e-mail/senha, confirmação por e-mail e senha mínima de 8 caracteres. Configure Site URL e a lista de redirecionamentos para a origem HTTPS publicada e, no desenvolvimento, `http://localhost:5173` e `http://127.0.0.1:5173`. Configure um provedor SMTP para uso real; o envio padrão do ambiente não substitui essa configuração.
-4. Execute o primeiro bloco de `supabase/bootstrap.sql.example` para gerar um código de entrada. Cadastre sua conta pelo aplicativo e confirme o e-mail. Execute o segundo bloco, com seu e-mail, para torná-la a única conta de professor. Entre novamente.
+4. Cadastre sua conta pelo aplicativo escolhendo **criar turma**: a conta vira dona de uma equipe nova e o código de entrada é gerado na hora (Configurações → Acesso). Para transformar uma conta já existente em dona da equipe "Minha turma", use `supabase/bootstrap.sql.example`. Entre novamente depois de confirmar o e-mail.
 5. Compartilhe o código com seus alunos. Você pode trocá-lo em Configurações. A mudança vale para novos cadastros; alunos existentes continuam com acesso. Para um professor entrar direto na equipe, gere o **código de professor** em Configurações: quem se cadastra com ele já entra como professor ativo, sem passar pela aprovação de aluno.
 6. Execute `npm run build` novamente e publique `dist` por HTTPS. As variáveis Vite são incorporadas durante a compilação; alterá-las depois exige uma nova compilação.
 
 Nenhum projeto Supabase foi criado automaticamente: o usuário optou por deixar essa conexão preparada. A versão entregue permite revisar o aplicativo pela demonstração; uso com alunos reais depende das etapas acima.
 
+### Supabase local (Docker ou Podman)
+
+Para rodar com dados de verdade na máquina, sem projeto na nuvem:
+
+1. `npx supabase start` — sobe o stack local (precisa de um runtime de contêiner).
+2. `npx supabase db reset` — aplica as migrations. Só em instância local descartável: o reset apaga os dados.
+3. Copie a URL (`http://127.0.0.1:54321`) e a chave **anon** que o CLI imprime para `.env.local`.
+4. `npm run dev` e cadastre-se escolhendo "criar turma".
+5. O e-mail de confirmação sai pelo Inbucket local: `http://127.0.0.1:54324`.
+
+Sem Docker, o CLI também funciona com Podman — suba a API do Podman e aponte o CLI para ela:
+
+```bash
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+podman system service --time=0 unix://$XDG_RUNTIME_DIR/podman/podman.sock &
+export DOCKER_HOST=unix://$XDG_RUNTIME_DIR/podman/podman.sock
+npx supabase start
+```
+
+O `npm run test:supabase` usa essa mesma instância e recusa URL remota.
+
 ## Regras e proteção dos dados
 
 - Uma turma e um professor; público só cadastra alunos, independentemente do papel enviado no formulário. O código é verificado pelo trigger do Auth, antes de concluir a transação, e removido dos metadados. O banco guarda somente hash com salt. O hash não é exposto ao navegador. O cadastro também aceita o código de professor, que entra direto como professor ativo; os dois códigos não podem colidir entre equipes.
 - Equipe técnica: professores têm perfil (faixa, graus, contato, nascimento) editável pelo dono, que também define a situação inicial e concede graus e faixas a eles; qualquer professor edita o perfil dos alunos. O dono elege um professor como sucessor em Configurações e volta a ser professor — a equipe nunca fica sem dono. Ao excluir a própria conta, o dono escolhe o professor que assume; o que ele registrou como professor (presenças, graduações, aulas, avisos) passa para o sucessor e o histórico dele como aluno é apagado.
+- Aluno cadastrado pelo professor: o professor cria o aluno direto na equipe (nome, foto, e-mail opcional e quantas aulas ele já fez), vários de uma vez, e ele passa a existir como qualquer outro aluno — presença, graduação e contagem. O aluno ainda não tem login: a identidade do aluno (`profiles.id`) é separada da conta de login (`profiles.auth_id`, vazio enquanto ele não entrar). O e-mail informado pelo professor é o que permite a entrada: no cadastro, o e-mail bate com o aluno sem conta e a conta é vinculada a ele, com todo o histórico preservado. Sem e-mail, ele continua na equipe normalmente. O professor pode informar ou trocar o e-mail no perfil do aluno e remover quem ele criou e nunca entrou no app; aluno que já entrou vira "inativo".
 - Presença do aluno não recebe data nem ID do cliente: usa `auth.uid()` e a data do servidor em `America/Sao_Paulo`. A chave aluno/data impede duplicatas. Professor pode acrescentar ou remover datas passadas e de hoje.
 - Faixas branca → azul → roxa → marrom → preta. Até quatro graus nas faixas anteriores à preta; não acompanha graus da preta. Meta inteira positiva opcional, apenas informativa.
 - Graduação sempre usa o dia atual. A presença desse dia pertence ao ciclo encerrado, mesmo que seja corrigida depois. Próximo ciclo começa no dia seguinte; total histórico nunca reinicia.

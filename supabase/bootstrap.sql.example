@@ -1,19 +1,46 @@
--- Execute depois da migration, no SQL Editor do SEU projeto Supabase.
--- 1. Gere um código de entrada. Copie o valor exibido em Messages/Notices.
+-- Execute depois das migrations, no SQL Editor do SEU projeto Supabase.
+--
+-- O caminho normal não precisa deste arquivo: no cadastro, escolha "criar
+-- turma" — a conta vira dona de uma equipe nova e o código de entrada é
+-- gerado na hora (Configurações → Acesso).
+--
+-- Use os blocos abaixo só para ajustar uma conta que já existe ou para gerar
+-- um código de entrada sem abrir o aplicativo.
+
+-- 1. Torne uma conta existente a dona da equipe "Minha turma" (a v2 já cria
+--    essa equipe vazia ao aplicar as migrations).
+--    Troque o e-mail abaixo e execute este bloco.
 do $$
-declare new_code text := upper(replace(gen_random_uuid()::text, '-', ''));
+declare teacher_email text := 'SUBSTITUA-PELO-SEU-EMAIL'; teacher_id uuid; team_id uuid;
 begin
- update public.class_settings
- set code_hash=encode(sha256(convert_to(code_salt || new_code, 'UTF8')), 'hex');
- raise notice 'Código da turma: %', new_code;
+  select id into teacher_id from auth.users where lower(email)=lower(teacher_email);
+  if teacher_id is null then raise exception 'Conta não encontrada. Cadastre e confirme o e-mail primeiro.'; end if;
+  select id into team_id from public.teams where slug='minha-turma';
+  if team_id is null then raise exception 'Equipe "minha-turma" não encontrada. Aplique as migrations primeiro.'; end if;
+  insert into public.team_members(team_id, user_id, role, status)
+   values (team_id, teacher_id, 'dono', 'ativo')
+   on conflict (team_id, user_id) do update set role = 'dono', status = 'ativo';
+  raise notice 'Conta tornada dona da equipe.';
 end $$;
 
--- 2. Cadastre sua conta pelo aplicativo usando esse código e confirme o e-mail.
--- 3. Substitua o e-mail abaixo e execute APENAS este bloco para virar professor.
+-- 2. Gere um código de entrada para a equipe (mesmo formato da tela de
+--    Configurações: XXXX-XXXX, sem letras nem números ambíguos).
+--    Copie o valor exibido em Messages/Notices.
 do $$
-declare teacher_email text := 'SUBSTITUA-PELO-SEU-EMAIL'; teacher_id uuid;
+declare v_team uuid; v_code text; v_salt text; v_alphabet text := 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  v_hex text; v_join text := ''; i integer;
 begin
- select id into teacher_id from auth.users where lower(email)=lower(teacher_email);
- if teacher_id is null then raise exception 'Conta não encontrada. Cadastre e confirme seu e-mail primeiro.'; end if;
- update public.profiles set role='professor' where id=teacher_id;
+  select id into v_team from public.teams where slug='minha-turma';
+  if v_team is null then raise exception 'Equipe "minha-turma" não encontrada. Aplique as migrations primeiro.'; end if;
+  v_salt := gen_random_uuid()::text;
+  v_hex := replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', '');
+  for i in 0..7 loop
+    v_join := v_join || substr(v_alphabet, 1 + (('x' || substr(v_hex, i * 2 + 1, 2))::bit(8)::int % 32), 1);
+  end loop;
+  v_code := substr(v_join, 1, 4) || '-' || substr(v_join, 5, 4);
+  update public.teams
+   set join_code = v_code, code_salt = v_salt,
+       code_hash = encode(sha256(convert_to(v_salt || v_code, 'UTF8')), 'hex')
+   where id = v_team;
+  raise notice 'Código da turma: %', v_code;
 end $$;

@@ -47,6 +47,10 @@ export type StudentView = {
   avatarPath: string | null
   contact: string | null
   birthDate: string | null
+  /** E-mail informado pelo professor (aluno criado sem conta no aplicativo). */
+  email: string | null
+  /** O aluno já tem conta no aplicativo? */
+  hasAccount: boolean
   joinedAt: string
   attendances: AttendanceView[]
   events: RankEvent[]
@@ -78,14 +82,6 @@ export type SessionDetail = {
   students?: { id: string; name: string; status: PresenceStatus | null; source: string | null }[]
 }
 export type SessionPhoto = { id: string; path: string; caption: string | null }
-/** Aluno criado pelo professor, aguardando o cadastro com o e-mail informado. */
-export type InvitedStudent = {
-  id: string
-  name: string
-  initialTotal: number
-  claimEmail: string | null
-  createdAt: string
-}
 export type SessionJournal = {
   id: string
   teamId: string
@@ -128,10 +124,10 @@ export async function removeLogo(path: string) {
     await supabase.storage.from(LOGO_BUCKET).remove([path])
 }
 export const AVATAR_BUCKET = 'avatars'
-/** Caminho do avatar: avatars/{equipe}/{usuário}/{uuid}.{ext}. */
-export function avatarPath(teamId: string, userId: string, file: Blob): string {
+/** Caminho do avatar: avatars/{equipe}/{aluno}/{uuid}.{ext}. */
+export function avatarPath(teamId: string, studentId: string, file: Blob): string {
   const ext = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg'
-  return `${AVATAR_BUCKET}/${teamId}/${userId}/${crypto.randomUUID()}.${ext}`
+  return `${AVATAR_BUCKET}/${teamId}/${studentId}/${crypto.randomUUID()}.${ext}`
 }
 export async function uploadAvatar(path: string, file: Blob) {
   if (!supabase) throw new Error('Equipe não conectada.')
@@ -237,10 +233,12 @@ export const updateSession = (id: string, title: string, startsAt: string, durat
 
 export async function loadDashboard(id: string): Promise<Dashboard> {
   if (!supabase) throw new Error('Equipe não conectada.')
+  // id é a conta de login (auth.uid()); o perfil é o do aluno — que pode ter
+  // outro id, quando o aluno foi criado pelo professor e só depois entrou.
   const { data: profile, error } = await supabase
     .from('profiles')
     .select('id,name,revision')
-    .eq('id', id)
+    .eq('auth_id', id)
     .single()
   if (error || !profile)
     throw new Error(
@@ -261,7 +259,7 @@ export async function loadDashboard(id: string): Promise<Dashboard> {
   if (settings.status !== 'ativo') return { ...base, students: [] }
   const students = isStaff(settings.role)
     ? await rpc<StudentView[]>('list_students')
-    : [await rpc<StudentView>('student_detail', { p_student: id })]
+    : [await rpc<StudentView>('student_detail', { p_student: profile.id })]
   return { ...base, students }
 }
 export function friendlyError(error: unknown): string {

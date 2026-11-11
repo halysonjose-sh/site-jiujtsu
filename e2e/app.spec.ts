@@ -121,7 +121,7 @@ test('calendário: professor cria horário, descreve aula, envia foto e lança p
   await page.getByRole('button', { name: 'Agenda' }).first().click()
   // Abre a aula mais recente que já aconteceu (dias com aula têm "aula(s)" no
   // rótulo). Espera as células com aula existirem antes de capturar os rótulos.
-  const cells = page.getByRole('gridcell', { name: /aula\(s\)/ })
+  const cells = page.getByRole('gridcell', { name: /:\s\d+ aulas?$/ })
   await cells.first().waitFor()
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })
   const labels = await cells.evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')!))
@@ -364,7 +364,9 @@ test('dono: promove aluno a professor e reverte na Gestão', async ({ page }) =>
   // A promovida sai da lista de alunos e entra na equipe técnica da Gestão.
   await expect(page.getByRole('button', { name: /Marina Santos/ })).toHaveCount(0)
   await page.getByRole('button', { name: 'Gestão' }).first().click()
-  await expect(page.getByText('Professores da equipe.')).toBeVisible()
+  await expect(page.getByText('Equipe técnica.')).toBeVisible()
+  // As ações do professor da equipe ficam no menu "⋯" ao lado do nome.
+  await page.getByRole('button', { name: 'Ações para Marina Santos' }).click()
   await expect(page.getByRole('button', { name: 'Voltar para aluno' })).toHaveCount(1)
   await page.getByRole('button', { name: 'Voltar para aluno' }).click()
   await page.getByRole('button', { name: 'Confirmar', exact: true }).click()
