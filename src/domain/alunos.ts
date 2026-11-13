@@ -54,6 +54,21 @@ export function validaLote(alunos: AlunoNovo[]): string | null {
   return null
 }
 
+/**
+ * Aulas que o professor soma ao histórico depois (sem criar aula no
+ * calendário): de 1 a 10.000 de uma vez — zero não soma nada.
+ */
+export function validaAulasHistorico(aulas: number): string | null {
+  if (!Number.isInteger(aulas) || aulas < 1 || aulas > MAX_AULAS)
+    return 'Informe quantas aulas ele fez.'
+  return null
+}
+
+/** "1 aula" / "4 aulas" (para o aviso de confirmação). */
+export function rotuloAulasFeitas(aulas: number): string {
+  return `${aulas} ${aulas === 1 ? 'aula' : 'aulas'}`
+}
+
 /** "1 aula anterior" / "12 aulas anteriores". */
 export function rotuloAulas(aulas: number): string {
   return `${aulas} ${aulas === 1 ? 'aula anterior' : 'aulas anteriores'}`

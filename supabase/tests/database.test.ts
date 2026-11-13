@@ -1175,3 +1175,70 @@ describe('aluno criado pelo professor (sem conta no aplicativo)', () => {
     await expect(db.query('select * from public.invited_students')).rejects.toThrow()
   })
 })
+
+describe('histórico de aulas (fora do calendário)', () => {
+  const rafa = id(80)
+  it('professor soma aulas ao histórico sem criar aula no calendário', async () => {
+    await asUser(teacher, 'select public.create_students($1::jsonb)', [
+      JSON.stringify([{ id: rafa, name: 'Rafael Dias', initialTotal: 5 }]),
+    ])
+    const antes = {
+      aulas: await n('select count(*) from public.class_sessions'),
+      detalhe: await one(teacher, 'select public.student_detail($1)', [rafa]),
+    }
+    await asUser(teacher, 'select public.add_student_history($1,$2)', [rafa, 4])
+    const d = await one(teacher, 'select public.student_detail($1)', [rafa])
+    // Total e frequência sobem 4; presença, ciclo e calendário ficam como estavam.
+    expect(d.total).toBe(antes.detalhe.total + 4)
+    expect(d.held).toBe(antes.detalhe.held + 4)
+    expect(d.cycle).toBe(antes.detalhe.cycle)
+    expect(d.attendances).toHaveLength(0)
+    expect(await n('select count(*) from public.class_sessions')).toBe(antes.aulas)
+    expect(
+      (await db.query('select initial_total from public.team_members where user_id=$1', [rafa]))
+        .rows[0].initial_total,
+    ).toBe(9)
+  })
+
+  it('valida a quantidade, o autor e o aluno', async () => {
+    for (const quantidade of [0, -1, null, 10001])
+      await expect(
+        asUser(teacher, 'select public.add_student_history($1,$2)', [rafa, quantidade]),
+      ).rejects.toThrow(/aulas/)
+    await expect(asUser(a, 'select public.add_student_history($1,$2)', [rafa, 1])).rejects.toThrow(
+      /professor/,
+    )
+    await expect(
+      asUser(teacher, 'select public.add_student_history($1,$2)', [teacher, 1]),
+    ).rejects.toThrow(/não encontrado/)
+    await expect(
+      asUser(teacher, 'select public.add_student_history($1,$2)', [outroAluno, 1]),
+    ).rejects.toThrow(/não encontrado/)
+    // Nenhuma tentativa mudou o histórico.
+    expect(
+      (await db.query('select initial_total from public.team_members where user_id=$1', [rafa]))
+        .rows[0].initial_total,
+    ).toBe(9)
+  })
+
+  it('o histórico respeita o teto das aulas anteriores', async () => {
+    const cheio = id(82)
+    await asUser(teacher, 'select public.create_students($1::jsonb)', [
+      JSON.stringify([{ id: cheio, name: 'Marcos Teste', initialTotal: 9995 }]),
+    ])
+    await expect(asUser(teacher, 'select public.add_student_history($1,$2)', [cheio, 6])).rejects.toThrow(
+      /10\.000/,
+    )
+    await asUser(teacher, 'select public.add_student_history($1,$2)', [cheio, 5])
+    expect((await one(teacher, 'select public.student_detail($1)', [cheio])).total).toBe(10000)
+  })
+
+  it('aluno inativo também recebe histórico: o que ele fez não se apaga', async () => {
+    await asUser(teacher, 'select public.set_student_status($1,$2)', [rafa, 'inativo'])
+    await asUser(teacher, 'select public.add_student_history($1,$2)', [rafa, 2])
+    expect(
+      (await db.query('select initial_total from public.team_members where user_id=$1', [rafa]))
+        .rows[0].initial_total,
+    ).toBe(11)
+  })
+})

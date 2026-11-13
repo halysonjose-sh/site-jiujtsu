@@ -4,8 +4,10 @@ import {
   emailValido,
   normalizaEmail,
   rotuloAulas,
+  rotuloAulasFeitas,
   rotuloBotao,
   validaAluno,
+  validaAulasHistorico,
   validaLote,
   type AlunoNovo,
 } from './alunos'
@@ -87,10 +89,27 @@ describe('validaLote', () => {
   })
 })
 
+describe('validaAulasHistorico', () => {
+  it('aceita de 1 a 10.000', () => {
+    expect(validaAulasHistorico(1)).toBeNull()
+    expect(validaAulasHistorico(10000)).toBeNull()
+  })
+  it('recusa zero, negativo, fracionado e acima do limite', () => {
+    expect(validaAulasHistorico(0)).toMatch(/aulas/)
+    expect(validaAulasHistorico(-2)).toMatch(/aulas/)
+    expect(validaAulasHistorico(2.5)).toMatch(/aulas/)
+    expect(validaAulasHistorico(10001)).toMatch(/aulas/)
+  })
+})
+
 describe('rótulos', () => {
   it('pluraliza as aulas anteriores', () => {
     expect(rotuloAulas(1)).toBe('1 aula anterior')
     expect(rotuloAulas(12)).toBe('12 aulas anteriores')
+  })
+  it('pluraliza as aulas somadas', () => {
+    expect(rotuloAulasFeitas(1)).toBe('1 aula')
+    expect(rotuloAulasFeitas(4)).toBe('4 aulas')
   })
   it('pluraliza o botão', () => {
     expect(rotuloBotao(1)).toBe('Criar aluno')

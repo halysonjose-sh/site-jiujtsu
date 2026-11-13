@@ -751,6 +751,19 @@ export function createDemo() {
       students = students.filter((s) => s.id !== alvo.id)
       presences = presences.filter((p) => p.studentId !== alvo.id)
     },
+    // O professor soma aulas ao histórico do aluno (feitas fora do aplicativo,
+    // sem aula no calendário): entram no total e na frequência dele.
+    add_student_history: (a) => {
+      if (role !== 'professor') throw new Error('Somente o professor pode fazer isso.')
+      const alvo = students.find((s) => s.id === a.p_user)
+      if (!alvo) throw new Error('Aluno não encontrado.')
+      const quantidade = Number(a.p_count)
+      if (!Number.isInteger(quantidade) || quantidade < 1 || quantidade > 10000)
+        throw new Error('Informe quantas aulas ele fez.')
+      if (alvo.initialTotal + quantidade > 10000)
+        throw new Error('O histórico não pode passar de 10.000 aulas.')
+      alvo.initialTotal += quantidade
+    },
     update_settings: (a) => void (goal = a.p_goal),
     confirm_presences: (a) => {
       const s = session(a.p_session)

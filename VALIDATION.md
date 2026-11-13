@@ -38,6 +38,14 @@
 - Fluxo validado no navegador contra o banco real: cadastro com "criar turma" (a conta vira dona da equipe e o código de entrada é gerado na hora), login, lista de alunos e a feature nova — aluno sem conta criado com foto, e-mail e 7 aulas anteriores, foto confirmada no Storage e exibida no perfil, total com as aulas anteriores. A foto do aluno no Storage e as políticas do bucket só puderam ser checadas aqui.
 - `supabase/bootstrap.sql.example` estava desatualizado (referenciava a tabela `class_settings`, removida na v2, e o papel em `profiles.role`, obsoleto). Reescrito para o modelo atual: o caminho normal é "criar turma" no cadastro; o arquivo serve para ajustar uma conta existente e gerar um código de entrada.
 
+## Histórico de aulas fora do calendário — 13/11/2026
+
+- Migration `202611130001_historico_aulas.sql` criada: `add_student_history(uuid, integer)` soma aulas ao histórico do aluno (`team_members.initial_total`) — aulas que ele fez fora do aplicativo, sem criar aula no calendário. Entram no total e na frequência, do mesmo jeito que as aulas anteriores do cadastro; não viram presença nem mudam o ciclo da graduação. Mesmo teto do cadastro (1 a 10.000 por vez, histórico não passa de 10.000) e vale para qualquer aluno, inclusive inativo.
+- Interface: item "Adicionar aulas ao histórico" no menu "Mais ações" do perfil do aluno (`TeacherActions`), com a folha `src/components/HistoricoAulas.tsx`. A validação vem das regras puras de `src/domain/alunos.ts` (`validaAulasHistorico`, `rotuloAulasFeitas`).
+- Demonstração espelha o RPC (`add_student_history` em `src/lib/demo.ts`).
+- Suítes no commit: `npm test` 204, `npm run test:db` 64 (bloco novo: soma sem criar aula, validação de quantidade/autor/aluno, teto de 10.000, aluno inativo), `npm run build` sem erro, Playwright Chromium 22 (teste novo: somar 4 aulas na demonstração, erro com zero e calendário idêntico antes e depois).
+- Migração aplicada no Supabase local e RPC validado por HTTP com o JWT do professor: somar 3 → 204, total 7 → 10, `held` 10, nenhuma presença criada; 0 e 99999 recusados com "Informe quantas aulas ele fez."; estado do aluno restaurado depois do teste. Conexão direta ao Postgres sem JWT é recusada por `require_teacher()`, como esperado.
+
 ## Limites da validação
 
 - O usuário ainda não possui Supabase na nuvem e pediu para deixar a conexão preparada. Cadastro, confirmação e recuperação por e-mail em um projeto real ainda precisam ser validados depois de conectar o projeto e configurar SMTP — o Inbucket local cobre o caminho, não a entrega real dos e-mails.

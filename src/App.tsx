@@ -56,6 +56,7 @@ import {
 } from './lib/api'
 import { Agenda, dayLabel, presenceLabel, Schedules, timeLabel } from './components/Classes'
 import { NovoAluno } from './components/NovoAluno'
+import { HistoricoAulas } from './components/HistoricoAulas'
 import { TrainTab } from './components/StudentTrain'
 import { Today } from './components/Today'
 import { ToastProvider, useToast } from './components/Toast'
@@ -1160,7 +1161,8 @@ function TeacherActions({
   const [belt, setBelt] = useState<Belt>('branca'),
     [degrees, setDegrees] = useState(0),
     [note, setNote] = useState(''),
-    [sheet, setSheet] = useState(false)
+    [sheet, setSheet] = useState(false),
+    [historico, setHistorico] = useState(false)
   const toast = useToast()
   // A failed/uncertain retry keeps its request key until the server revision changes.
   const keys = useRef<Record<string, string>>({})
@@ -1274,6 +1276,11 @@ function TeacherActions({
       )}
       <div className="teacher-actions-row">
         <OverflowMenu label="Mais ações">
+          {s.role === 'aluno' && (
+            <button className="text-button" type="button" onClick={() => setHistorico(true)}>
+              Adicionar aulas ao histórico
+            </button>
+          )}
           {/* data-stay: o menu não fecha ao clicar, para o diálogo de confirmação existir. */}
           <div data-stay>
             {last && (
@@ -1364,6 +1371,13 @@ function TeacherActions({
           <p className="field-help">A ação é aplicada na hora; use o Desfazer do aviso se errar.</p>
         </div>
       </BottomSheet>
+      {historico && (
+        <HistoricoAulas
+          student={{ id: s.id, name: s.name }}
+          mutate={mutate}
+          onClose={() => setHistorico(false)}
+        />
+      )}
     </section>
   )
 }

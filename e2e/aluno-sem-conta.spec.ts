@@ -98,3 +98,43 @@ test('professor lança presença do aluno que criou, sem conta no app', async ({
     'já confirmado',
   )
 })
+
+// O professor soma aulas que o aluno fez fora do aplicativo ao histórico dele:
+// o total sobe e nenhuma aula é criada no calendário.
+test('professor adiciona aulas ao histórico sem criar aula no calendário', async ({ page }) => {
+  test.setTimeout(120_000)
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Conhecer a demonstração' }).click()
+  await page.getByRole('button', { name: 'Ver como professor' }).click()
+
+  // O calendário antes: nenhuma aula nova pode nascer por causa do histórico.
+  await page.getByRole('button', { name: 'Agenda' }).first().click()
+  const cells = page.getByRole('gridcell', { name: /:\s\d+ aulas?$/ })
+  await cells.first().waitFor()
+  const antes = await cells.evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')!))
+
+  await page.getByRole('button', { name: 'Alunos' }).first().click()
+  const carlos = page.locator('.student-row', { hasText: 'Carlos Lima' })
+  await expect(carlos).toBeVisible()
+  await carlos.click()
+  const total = page.locator('.stat-card', { hasText: 'Total de aulas' })
+  await expect(total.locator('strong')).toHaveText('12')
+
+  await page.getByRole('button', { name: 'Mais ações' }).click()
+  await page.getByRole('button', { name: 'Adicionar aulas ao histórico' }).click()
+  const folha = page.locator('.sheet-backdrop dialog')
+  // Zero não soma nada: o erro aparece dentro da folha.
+  await folha.getByLabel('Quantas aulas ele fez').fill('0')
+  await folha.getByRole('button', { name: 'Adicionar ao histórico' }).click()
+  await expect(folha.getByText('Informe quantas aulas ele fez.')).toBeVisible()
+
+  await folha.getByLabel('Quantas aulas ele fez').fill('4')
+  await folha.getByRole('button', { name: 'Adicionar ao histórico' }).click()
+  await expect(total.locator('strong')).toHaveText('16')
+
+  // O calendário continua igual: o histórico nunca cria aula.
+  await page.getByRole('button', { name: 'Agenda' }).first().click()
+  await cells.first().waitFor()
+  const depois = await cells.evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')!))
+  expect(depois).toEqual(antes)
+})
